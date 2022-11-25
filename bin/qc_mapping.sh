@@ -1,7 +1,7 @@
 FILENAME=$1
 SAMPLE=$(echo $FILENAME | cut -d. -f1)
 TMPFILE=${SAMPLE}.raw.tsv
-OUTFILE=${SAMPLE}.coverage.tsv
+OUTFILE="${SAMPLE}.QC_mapping.tsv"
 
 echo -e 'sample\tpercent_coverage\tmean_coverage' > $OUTFILE
 
