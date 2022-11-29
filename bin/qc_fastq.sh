@@ -1,6 +1,6 @@
 FORWARD=$1
 REVERSE=$2
-SAMPLE=$(echo $FORWARD | cut -d. -f1)
+SAMPLE=$(echo $FORWARD | cut -d_ -f1)
 OUTFILE="${SAMPLE}.QC_fastq.tsv"
 
 if [[ ${FORWARD} == *.gz ]]; then
