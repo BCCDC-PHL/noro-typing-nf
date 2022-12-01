@@ -11,8 +11,9 @@ nextflow.enable.dsl = 2
 // include { pipeline_provenance } from './modules/provenance.nf'
 // include { collect_provenance } from './modules/provenance.nf'
 include { fastp ; cutadapt; fastQC; fastq_check; } from './modules/qc.nf'
+include { make_blast_database; run_blastn} from './modules/blast.nf'
+include { assembly } from './modules/assembly.nf'
 include { multiqc } from './modules/multiqc.nf'
-// include { segcov} from './modules/segcov.nf'
 
 println "HELLO. STARTING NOROVIRUS METAGENOMICS PIPELINE."
 
@@ -22,6 +23,7 @@ log.info """Norovirus Metagenomics Pipeline
 		projectDir        : ${projectDir}
 		launchDir         : ${launchDir}
 		primers           : ${params.primers}
+		blast_db          : ${params.db}
 		fastqInputDir     : ${params.fastq_input}
 		outdir            : ${params.outdir}
 		run_name          : ${params.run_name}
@@ -35,16 +37,18 @@ log.info """Norovirus Metagenomics Pipeline
 // pipeline run      : ${params.pipeline_short_name}
 // pipeline version  : ${params.pipeline_minor_version}
 
+blast_db_dir = file("${projectDir}/blast_db").mkdirs()
+println blast_db_dir ? "BLAST DB directory created successfully" : "Cannot create directory: $blast_db_dir"
+
 workflow {
 	ch_start_time = Channel.of(LocalDateTime.now())
 	ch_pipeline_name = Channel.of(workflow.manifest.name)
 	ch_pipeline_version = Channel.of(workflow.manifest.version)
 
-
 	//ch_pipeline_provenance = pipeline_provenance(ch_pipeline_name.combine(ch_pipeline_version).combine(ch_start_time))
 
 	ch_primers = Channel.fromPath(params.adapters_path)
-	//ch_db = Channel.fromPath(params.db)
+	ch_db = Channel.fromPath(params.db)
 	ch_fastq_input = Channel.fromFilePairs( params.fastq_search_path, flat: true ).map{ it -> [it[0].split('_')[0], it[1], it[2]] }.unique{ it -> it[0] }
 
 	main:
@@ -53,6 +57,12 @@ workflow {
 		// cutadapt(fastp.out.trimmed_reads.combine(ch_primers))
 		fastQC(fastp.out.trimmed_reads)
 		fastq_check(fastp.out.trimmed_reads)
+		fastq_check.out.formatted.collectFile(name: "${params.outdir}/fastq_qual/fastq_stats.tsv", keepHeader: true, skip: 1)
+		
+		assembly(fastp.out.trimmed_reads)
+		make_blast_database(ch_db)
+		run_blastn(assembly.out.combine(make_blast_database.out))
+		
 		// FluViewer(cutadapt.out.primer_trimmed_reads.combine(ch_db))
 		// FluViewer_assemble(cutadapt.out.primer_trimmed_reads.combine(ch_db))
 		// QualiMap(FluViewer.out.alignment)
