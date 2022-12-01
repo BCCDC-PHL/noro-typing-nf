@@ -23,7 +23,7 @@ log.info """Norovirus Metagenomics Pipeline
 		projectDir        : ${projectDir}
 		launchDir         : ${launchDir}
 		primers           : ${params.primers}
-		blast_db          : ${params.db}
+		blast_db          : ${params.blast_db}
 		fastqInputDir     : ${params.fastq_input}
 		outdir            : ${params.outdir}
 		run_name          : ${params.run_name}
@@ -48,19 +48,25 @@ workflow {
 	//ch_pipeline_provenance = pipeline_provenance(ch_pipeline_name.combine(ch_pipeline_version).combine(ch_start_time))
 
 	ch_primers = Channel.fromPath(params.adapters_path)
-	ch_db = Channel.fromPath(params.db)
+	ch_blast_db = Channel.fromPath(params.blast_db)
 	ch_fastq_input = Channel.fromFilePairs( params.fastq_search_path, flat: true ).map{ it -> [it[0].split('_')[0], it[1], it[2]] }.unique{ it -> it[0] }
 
 	main:
 		//hash_files(ch_fastq_input.map{ it -> [it[0], [it[1], it[2]]] }.combine(Channel.of("fastq_input")))
+		
+		// QUALITY CONTROL 
 		fastp( ch_fastq_input )
 		// cutadapt(fastp.out.trimmed_reads.combine(ch_primers))
 		fastQC(fastp.out.trimmed_reads)
 		fastq_check(fastp.out.trimmed_reads)
 		fastq_check.out.formatted.collectFile(name: "${params.outdir}/fastq_qual/fastq_stats.tsv", keepHeader: true, skip: 1)
-		
+		kraken(fastp.out.trimmed_reads)
+
+		// ASSEMBLY
 		assembly(fastp.out.trimmed_reads)
-		make_blast_database(ch_db)
+
+		// BLAST SEARCH
+		make_blast_database(ch_blast_db)
 		run_blastn(assembly.out.combine(make_blast_database.out))
 		
 		// FluViewer(cutadapt.out.primer_trimmed_reads.combine(ch_db))
