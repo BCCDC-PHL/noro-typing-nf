@@ -123,3 +123,25 @@ process mapping_check {
     qc_mapping.sh $bam 
     """
 }
+
+process kraken {
+
+    tag {sample_id}
+
+    conda "${launchDir}/environment/kraken.yaml"
+
+    publishDir path: "${params.outdir}/kraken/", pattern: "${sample_id}.kraken.report", mode: "copy"
+    publishDir path: "${params.outdir}/kraken/raw", pattern: "${sample_id}.kraken.raw", mode: "copy"
+
+
+    input: 
+    tuple val(sample_id), path(forward), path(reverse)
+
+    output:
+    path("${sample_id}.kraken.report"), emit: report
+    path("${sample_id}.kraken.raw"), emit: raw
+
+    """
+    kraken2 --threads ${task.cpus} --db ${params.kraken_db} --paired ${forward} ${reverse} --report ${sampleName}.kraken.report > ${sampleName}.kraken.raw
+    """
+}
