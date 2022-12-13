@@ -8,18 +8,17 @@ nextflow.enable.dsl=2
 import java.nio.file.Paths
 
 process make_blast_database {
-    //storeDir "${baseDir}/blast_db/"
+    storeDir "${projectDir}/cache/blast_db/"
     
     input:
     path(fasta)
 
     output:
-    tuple val("ref_db"), path("ref_db.*")
+    tuple path("${fasta}"), path("${fasta}.*")
 
     script:
-    blast_db = fasta.simpleName
     """
-    makeblastdb -dbtype nucl -in ${fasta} -out ref_db
+    makeblastdb -dbtype nucl -in ${fasta} -out ${fasta}
     """
 }
 
@@ -30,7 +29,8 @@ process run_blastn {
     publishDir "${params.outdir}/blastn", pattern: "${sample_id}_blastn.tsv" , mode:'copy'
 
     input:
-    tuple val(sample_id), path(contig_file), val(blast_db), path("*")
+    tuple val(sample_id), path(contig_file)
+    tuple path(blast_db), path("*")
 
     output:
     tuple val(sample_id), path("${sample_id}_blastn.tsv")
