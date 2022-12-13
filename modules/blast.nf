@@ -55,7 +55,7 @@ process filter_alignments {
 
     script:
     """
-    filter_alignment.py ${blast_output} --min_cov ${params.min_blast_cov} --min_id ${params.min_blast_id} --output ${filtered_blast}
+    filter_alignments.py ${blast_output} --min_cov ${params.min_blast_cov} --min_id ${params.min_blast_id} --output "${sample_id}_blastn_filter.tsv"
     """
 
 }
