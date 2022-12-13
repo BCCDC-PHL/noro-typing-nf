@@ -26,7 +26,7 @@ process run_blastn {
 
     tag {sample_id}
 
-    publishDir "${params.outdir}/blastn", pattern: "${sample_id}_blastn.tsv" , mode:'copy'
+    // publishDir "${params.outdir}/blastn", pattern: "${sample_id}_blastn.tsv" , mode:'copy'
 
     input:
     tuple val(sample_id), path(contig_file)
@@ -39,4 +39,23 @@ process run_blastn {
     """
     blastn -query ${contig_file} -db ${blast_db} -outfmt "6 qseqid sseqid pident bitscore qlen slen" > ${sample_id}_blastn.tsv
     """
+}
+
+process filter_alignments {
+
+    tag {sample_id}
+
+    publishDir "${params.outdir}/blastn/", pattern: "${sample_id}_blastn_filter.tsv" , mode:'copy'
+
+    input: 
+    tuple val(sample_id), path(blast_output)
+
+    output:
+    tuple val(sample_id), path("${sample_id}_blastn_filter.tsv")
+
+    script:
+    """
+    filter_alignment.py ${blast_output} --min_cov ${params.min_blast_cov} --min_id ${params.min_blast_id} --output ${filtered_blast}
+    """
+
 }
