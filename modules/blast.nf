@@ -59,3 +59,23 @@ process filter_alignments {
     """
 
 }
+
+process get_references {
+
+    tag {sample_id}
+
+    publishDir "${params.outdir}/blastn/final_refs", pattern: "${sample_id}.refs.fasta" , mode:'copy'
+
+    input:
+    tuple val(sample_id), path(blast_filtered), path(references)
+
+    output:
+    tuple val(sample_id), path("${sample_id}.refs.fasta")
+
+    script: 
+    mode = params.assemble ? "-c" : "" 
+
+    """
+    get_references.py -b ${blast_filtered} -s ${references} ${mode} -o ${sample_id}.refs.fasta
+    """
+}
