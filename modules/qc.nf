@@ -85,7 +85,7 @@ process fastq_check {
 
     tag { sample_id }
 
-    conda "${baseDir}/environments/fastx.yaml"
+    conda "${projectDir}/environments/fastx.yaml"
 
     //publishDir path: "${params.outdir}/fastq_qual/", pattern: "${sample_id}.fqqual.tsv", mode: "copy"
     publishDir path: "${params.outdir}/fastq_qual/", pattern: "${sample_id}.R{1,2}.raw.tsv", mode: "copy"
@@ -124,24 +124,135 @@ process mapping_check {
     """
 }
 
-process kraken {
+process run_kraken {
 
     tag {sample_id}
 
-    conda "${launchDir}/environment/kraken.yaml"
+    label 'heavy'
 
-    publishDir path: "${params.outdir}/kraken/", pattern: "${sample_id}.kraken.report", mode: "copy"
-    publishDir path: "${params.outdir}/kraken/raw", pattern: "${sample_id}.kraken.raw", mode: "copy"
+    conda "${projectDir}/environments/kraken.yaml"
+
+    publishDir path: "${params.outdir}/kraken/reports", pattern: "${sample_id}.kraken.report", mode: "copy"
+    publishDir path: "${params.outdir}/kraken/output", pattern: "${sample_id}.kraken.out", mode: "copy"
 
 
     input: 
-    tuple val(sample_id), path(forward), path(reverse)
+    tuple val(sample_id), path(reads_1), path(reads_2)
 
     output:
-    path("${sample_id}.kraken.report"), emit: report
-    path("${sample_id}.kraken.raw"), emit: raw
+    tuple val(sample_id), path("${sample_id}.kraken.report"), path("${sample_id}.kraken.out")
 
     """
-    kraken2 --threads ${task.cpus} --db ${params.kraken_db} --paired ${forward} ${reverse} --report ${sampleName}.kraken.report > ${sampleName}.kraken.raw
+    kraken2 --confidence 0.1 \
+    --threads ${task.cpus} --db ${params.kraken_db} \
+    --paired ${reads_1} ${reads_2} \
+    --report ${sample_id}.kraken.report > ${sample_id}.kraken.out 
     """
+}
+
+process kraken_filter {
+
+    tag {sample_id}
+
+    conda "${projectDir}/environments/kraken.yaml"
+
+    publishDir path: "${params.outdir}/kraken/filtered", pattern: "${sample_id}*fastq.gz", mode: "copy"
+
+    input:
+    tuple val(sample_id), path(reads_1), path(reads_2), path(kraken_report), path(kraken_out)
+
+    output:
+    tuple val(sample_id), path("${sample_id}_R1.kfilter.fastq.gz"), path("${sample_id}_R2.kfilter.fastq.gz"), emit: filtered
+
+    script:
+    """
+    # Extract the norovirus specific reads 
+    # will exclude anything not under Norovirus clade; including human reads 
+    extract_kraken_reads.py \
+    -k ${sample_id}.kraken.out -r ${sample_id}.kraken.report \
+    -1 ${reads_1} -2 ${reads_2} \
+    -o ${sample_id}_R1.kfilter.fastq.gz -o2 ${sample_id}_R2.kfilter.fastq.gz \
+    -t ${params.norovirus_id} --include-children &&
+    gzip ${sample_id}_R1.kfilter.fastq.gz &&
+    gzip ${sample_id}_R2.kfilter.fastq.gz
+
+    # # for extracting non-norovirus reads
+    # --exclude
+    """
+
+}
+
+process build_composite_reference {
+    storeDir "${projectDir}/cache/composite"
+
+    input:
+    tuple path(human_ref), path(virus_ref)
+
+    output:
+    path("${composite_ref}"), emit: fasta
+    path("${composite_ref}.*"), emit: index
+    path("reference_headers.txt"), emit: headers
+
+    script:
+    composite_ref = params.composite_ref_name
+    """ 
+    cat ${human_ref} ${virus_ref} > ${composite_ref} &&
+    bwa index ${composite_ref} &&
+    grep ">" ${virus_ref} | cut -c2- > reference_headers.txt
+    """
+}
+
+process index_composite_reference {
+    storeDir "${projectDir}/cache/composite"
+
+    // label 'ultra'
+
+    input:
+    path(composite_ref)
+
+    output:
+    // val("${composite_ref.simpleName}"), emit: name
+    // tuple path("${composite_ref}.bwt"), path("${composite_ref}.amb"), path("${composite_ref}.ann"), path("${composite_ref}.pac"), path("${composite_ref}.sa"), emit: files
+    path("${composite_ref}.*")
+
+    script:
+    ref_name = composite_ref.simpleName
+    """
+    # bowtie2-build --threads ${task.cpus} ${composite_ref} ${ref_name}
+    bwa index ${composite_ref}
+    """
+}
+
+process dehost_fastq {
+
+    label 'heavy'
+
+    tag {sample_id}
+
+    publishDir path: "${params.outdir}/dehosted/", pattern: "${sample_id}*fastq.gz", mode: "copy"
+    publishDir path: "${params.outdir}/dehosted/bam", pattern: "${sample_id}*bam", mode: "copy"
+    publishDir path: "${params.outdir}/dehosted/metrics", pattern: "${sample_id}*_metrics.txt", mode: "copy"
+
+
+    input:
+    tuple val(sample_id), path(reads_1), path(reads_2)
+    val(virus_reference_name)
+    path(index_name)
+    path("*")
+
+    output:
+    tuple val(sample_id), path("${sample_id}_R1.dehost.fastq.gz"), path("${sample_id}_R2.dehost.fastq.gz"), emit: fastqs
+    tuple val(sample_id), path("${sample_id}_metrics.txt"), emit: metrics
+
+    script: 
+    // params.composite_ref_name
+    // dehost.py -k ${virus_names.join(' ')}
+    """
+    bwa mem -t ${task.cpus} -T 30 ${index_name} ${reads_1} ${reads_2} | \
+    dehost.py -k ${virus_reference_name} -n ${sample_id} -o ${sample_id}.dehosted.bam 2> ${sample_id}_metrics.txt
+    samtools sort -n --threads ${task.cpus} ${sample_id}.dehosted.bam | \
+    samtools fastq --threads ${task.cpus} -1 ${sample_id}_R1.dehost.fastq.gz -2 ${sample_id}_R2.dehost.fastq.gz -0 /dev/null -s /dev/null -n
+    """
+
+
 }
