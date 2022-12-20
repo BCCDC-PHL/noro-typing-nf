@@ -10,9 +10,12 @@ nextflow.enable.dsl = 2
 
 // include { pipeline_provenance } from './modules/provenance.nf'
 // include { collect_provenance } from './modules/provenance.nf'
-include { fastp ; cutadapt; fastQC; fastq_check; run_kraken; kraken_filter; index_composite_reference ; build_composite_reference; dehost_fastq; } from './modules/qc.nf'
-include { make_blast_database; run_blastn} from './modules/blast.nf'
-include { assembly } from './modules/ngs-core.nf'
+include { fastp ; cutadapt; fastQC; fastq_check} from './modules/qc.nf'
+include { run_kraken; kraken_filter; index_composite_reference ; build_composite_reference; dehost_fastq } from './modules/qc.nf'
+include { make_blast_database ; run_blastn ; filter_alignments ; get_references } from './modules/blast.nf'
+include { assembly } from './modules/assembly.nf'
+include { create_bwa_index; create_fasta_index; map_reads; sort_filter_sam; index_bam } from './modules/mapping.nf'
+include { run_freebayes; run_mpileup } from './modules/variant_calling.nf'
 include { multiqc } from './modules/multiqc.nf'
 
 println "HELLO. STARTING NOROVIRUS METAGENOMICS PIPELINE."
@@ -54,7 +57,8 @@ workflow {
 
 	ch_primers = Channel.fromPath(params.adapters_path)
 	ch_ref_names = Channel.fromList(params.virus_ref_names).collect()
-	ch_composite_data = Channel.fromList([params.virus_name, params.human_ref, params.virus_ref]).collect()
+	ch_composite_paths = Channel.fromList([params.human_ref, params.virus_ref]).collect()
+	ch_human_ref = Channel.from(params.human_ref)
 	ch_blast_db_path = Channel.from(params.blast_db)
 	ch_fastq_input = Channel.fromFilePairs( params.fastq_search_path, flat: true ).map{ it -> [it[0].split('_')[0], it[1], it[2]] }.unique{ it -> it[0] }
 
@@ -67,14 +71,12 @@ workflow {
 		// fastQC(fastp.out.trimmed_reads)
 		// fastq_check(fastp.out.trimmed_reads)
 		// fastq_check.out.formatted.collectFile(name: "${params.outdir}/fastq_qual/fastq_stats.tsv", keepHeader: true, skip: 1)
-		// run_kraken(fastp.out.trimmed_reads)
-		// kraken_filter(fastp.out.trimmed_reads.join(run_kraken.out))
+		
+		// KRAKEN FILTERING
+		run_kraken(fastp.out.trimmed_reads)
+		kraken_filter(fastp.out.trimmed_reads.join(run_kraken.out))
 
-		// build_composite_reference(ch_composite_data)
 
-		// index_composite_reference(build_composite_reference.out)
-
-		// dehost_fastq(kraken_filter.out, ch_ref_names, index_composite_reference.out)
 
 		// ASSEMBLY
 		assembly(fastp.out.trimmed_reads)
@@ -82,7 +84,37 @@ workflow {
 		// // BLAST SEARCH
 		make_blast_database(ch_blast_db_path).first().set{ch_blast_db} // first() converts the channel from a consumable queue channel into an infinite single-value channel
 		run_blastn(assembly.out, ch_blast_db)
-		
+		filter_alignments(run_blastn.out)
+
+		if (params.assemble){
+			ch_ref_seqs = filter_alignments.out.join(assembly.out)
+		} else {
+			ch_ref_seqs = filter_alignments.out.combine(ch_blast_db_path)
+		}
+
+		get_references(ch_ref_seqs)
+
+		// DEHOSTING
+		build_composite_reference(ch_human_ref.combine(get_references.out.map{it -> it[1]})).set{ch_composite_ref}
+
+		index_composite_reference(ch_composite_ref)
+
+		dehost_fastq(kraken_filter.out, index_composite_reference.out.header, index_composite_reference.out.fasta, index_composite_reference.out.index)
+
+		create_bwa_index(get_references.out)
+
+		create_fasta_index(get_references.out)
+
+		map_reads(fastp.out.trimmed_reads.join(create_bwa_index.out))
+
+		sort_filter_sam(map_reads.out)
+
+		index_bam(sort_filter_sam.out)
+
+		run_freebayes(sort_filter_sam.out.join(create_fasta_index.out))
+
+		run_mpileup(sort_filter_sam.out.join(create_fasta_index.out))
+
 		
 		// FluViewer(cutadapt.out.primer_trimmed_reads.combine(ch_db))
 		// FluViewer_assemble(cutadapt.out.primer_trimmed_reads.combine(ch_db))
