@@ -19,7 +19,7 @@ def init_parser():
 	parser.add_argument('-f', '--file', required=False, default=False, help='Composite Reference SAM file of mapped reads')
 	parser.add_argument('-n', '--name', required=False, default=False, help='Name of the sample required when using stdin')
 	parser.add_argument('-t', '--threads', required=False, type=int, default=1, help='Number of threads to run in parallel.')
-	parser.add_argument('-k', '--keep_id', required=True, nargs='+', type=str, help='Reference ID of genome to keep. Default: MN908947.3')
+	parser.add_argument('-r', '--ref_seqs', required=True, help='Reference ID of genome to keep. Default: MN908947.3')
 	parser.add_argument('-q', '--keep_minimum_quality', required=False, type=int, default=60, help='Minimum quality of the reads to keep')
 	parser.add_argument('-Q', '--remove_minimum_quality', required=False, type=int, default=0, help='Minimum quality of the reads to be included in removal')
 	parser.add_argument('-o', '--output', required=False, default=False, help='Output BAM name')
@@ -163,6 +163,9 @@ def filter_reads(input_sam_fp, output_bam_fp, contig_names):
 				unmapped_reads +=1
 			else:
 				human_reads += 1
+	
+	input_sam.close()
+	output_bam.close()
 
 	viral_reads = sum(contig_dict.values())
 	total_reads = viral_reads + human_reads + unmapped_reads
@@ -170,11 +173,13 @@ def filter_reads(input_sam_fp, output_bam_fp, contig_names):
 	if total_reads > 0:
 		print(f"viral read count = {viral_reads} "
 			  f"({viral_reads/total_reads * 100:.2f}%)", file=sys.stderr)
-		print(contig_dict, file=sys.stderr)
 		print(f"human read count = {human_reads} "
 			  f"({human_reads/total_reads * 100:.2f}%) ", file=sys.stderr)
 		print(f"unmapped read count = {unmapped_reads} "
 			  f"({unmapped_reads/total_reads * 100:.2f}%)", file=sys.stderr)
+		for contig in contig_dict:
+			if contig_dict[contig] > 0:
+				print(f'{contig} : {contig_dict[contig]}', file=sys.stderr)
 	else:
 		print(f"viral read count = {viral_reads} "
 			  f"(0.00%)", file=sys.stderr)
@@ -187,7 +192,18 @@ def filter_reads(input_sam_fp, output_bam_fp, contig_names):
 def main_artic():
 	parser = init_parser()
 	args = parser.parse_args()
-	filter_reads(args.file, args.output, args.keep_id)
+	
+	# if string is a file path, read the file and parse the set of reference sequences 
+	if os.path.isfile(args.ref_seqs):
+		print("Reading reference sequences from text file.")
+		with open(args.ref_seqs, 'r') as infile:
+			refs = [x.strip() for x in infile.readlines()]
+	
+	# if not a file, read string as the virus name 
+	else:
+		refs = list(str(args.ref_seqs))
+
+	filter_reads(args.file, args.output, refs)
 
 if __name__ == "__main__":
 	main_artic()
