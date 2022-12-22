@@ -150,4 +150,4 @@ dependencies:
   - zipp=3.11.0=pyhd8ed1ab_0
   - zlib=1.2.13=hfd90126_4
   - zstd=1.5.2=hfa58983_4
-prefix: /opt/miniconda/envs/noro
+prefix: ~/miniconda3/envs/noro

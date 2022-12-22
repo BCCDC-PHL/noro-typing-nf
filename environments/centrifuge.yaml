@@ -1,0 +1,38 @@
+name: centrifuge
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - _libgcc_mutex=0.1=conda_forge
+  - _openmp_mutex=4.5=2_gnu
+  - ca-certificates=2022.12.7=ha878542_0
+  - centrifuge=1.0.4=hd03093a_0
+  - certifi=2019.11.28=py27h8c360ce_1
+  - gettext=0.21.1=h27087fc_0
+  - ld_impl_linux-64=2.39=hcc3a1bd_1
+  - libffi=3.2.1=he1b5a44_1007
+  - libgcc-ng=12.2.0=h65d4601_19
+  - libgomp=12.2.0=h65d4601_19
+  - libiconv=1.17=h166bdaf_0
+  - libidn2=2.3.4=h166bdaf_0
+  - libnsl=2.0.0=h7f98852_0
+  - libsqlite=3.40.0=h753d276_0
+  - libstdcxx-ng=12.2.0=h46fd767_19
+  - libunistring=0.9.10=h7f98852_0
+  - libzlib=1.2.13=h166bdaf_4
+  - ncurses=6.3=h27087fc_1
+  - openssl=1.1.1s=h0b41bf4_1
+  - perl=5.32.1=2_h7f98852_perl5
+  - pip=20.1.1=pyh9f0ad1d_0
+  - python=2.7.15=h5a48372_1011_cpython
+  - python_abi=2.7=1_cp27mu
+  - readline=8.1.2=h0f457ee_0
+  - setuptools=44.0.0=py27_0
+  - sqlite=3.40.0=h4ff8645_0
+  - tar=1.34=hb2e2bae_1
+  - tk=8.6.12=h27826a3_0
+  - wget=1.20.3=ha56f1ee_1
+  - wheel=0.37.1=pyhd8ed1ab_0
+  - zlib=1.2.13=h166bdaf_4
+prefix: /home/john.palmer/miniconda3/envs/centrifuge
