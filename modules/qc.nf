@@ -171,16 +171,43 @@ process kraken_filter {
     extract_kraken_reads.py \
     -k ${sample_id}.kraken.out -r ${sample_id}.kraken.report \
     -1 ${reads_1} -2 ${reads_2} \
-    -o ${sample_id}_R1.kfilter.fastq.gz -o2 ${sample_id}_R2.kfilter.fastq.gz \
-    -t ${params.norovirus_id} --include-children &&
-    gzip ${sample_id}_R1.kfilter.fastq.gz &&
-    gzip ${sample_id}_R2.kfilter.fastq.gz
+    -o ${sample_id}_R1.kfilter.fastq -o2 ${sample_id}_R2.kfilter.fastq \
+    -t ${params.krk_norovirus_id} --include-children &&
+    gzip -c ${sample_id}_R1.kfilter.fastq > ${sample_id}_R1.kfilter.fastq.gz &&
+    gzip -c ${sample_id}_R2.kfilter.fastq > ${sample_id}_R2.kfilter.fastq.gz
 
     # # for extracting non-norovirus reads
     # --exclude
     """
 
 }
+
+process run_centrifuge {
+    tag {sample_id}
+
+    label 'heavy'
+
+    conda "${projectDir}/environments/kraken.yaml"
+
+    publishDir path: "${params.outdir}/centrifuge/reports", pattern: "${sample_id}.kraken.report", mode: "copy"
+    publishDir path: "${params.outdir}/centrifuge/output", pattern: "${sample_id}.kraken.out", mode: "copy"
+
+
+    input: 
+    tuple val(sample_id), path(reads_1), path(reads_2)
+
+    output:
+    tuple val(sample_id), path("${sample_id}.kraken.report"), path("${sample_id}.kraken.out")
+
+    """
+    centrifuge  --threads ${task.cpus} \
+    -X ${params.centrifuge_db} \
+    -1 ${reads_1} -2 ${reads_2} \
+    --report-file ${sample_id}.cent.report -S ${sample_id}.cent.out 
+    """
+
+}
+
 
 process build_composite_reference {
     storeDir "${projectDir}/cache/composite"
@@ -190,15 +217,15 @@ process build_composite_reference {
 
     output:
     path("${composite_ref}"), emit: fasta
-    path("${composite_ref}.*"), emit: index
-    path("reference_headers.txt"), emit: headers
+    // path("${composite_ref}.*"), emit: index
+    // path("reference_headers.txt"), emit: headers
 
     script:
-    composite_ref = params.composite_ref_name
+    composite_ref = params.composite_ref_name 
     """ 
-    cat ${human_ref} ${virus_ref} > ${composite_ref} &&
-    bwa index ${composite_ref} &&
-    grep ">" ${virus_ref} | cut -c2- > reference_headers.txt
+    cat ${human_ref} ${virus_ref} > ${composite_ref} 
+    # bwa index ${composite_ref} 
+    # grep ">" ${virus_ref} | cut -c2- > reference_headers.txt
     """
 }
 
@@ -213,14 +240,30 @@ process index_composite_reference {
     output:
     // val("${composite_ref.simpleName}"), emit: name
     // tuple path("${composite_ref}.bwt"), path("${composite_ref}.amb"), path("${composite_ref}.ann"), path("${composite_ref}.pac"), path("${composite_ref}.sa"), emit: files
-    path("${composite_ref}.*")
+    tuple path("${composite_ref}"), path("${composite_ref}.*")
 
     script:
     ref_name = composite_ref.simpleName
     """
     # bowtie2-build --threads ${task.cpus} ${composite_ref} ${ref_name}
-    bwa index ${composite_ref}
+    bwa index -a bwtsw -b 10000000 ${composite_ref}
     """
+}
+
+process get_reference_headers {
+
+    input:
+    path(viral_reference)
+
+    output:
+    path("${ref_name}_headers.txt")
+
+    script:
+    ref_name = viral_reference.simpleName
+
+    """
+    grep ">" ${viral_reference} | cut -c2- > ${ref_name}_headers.txt
+    """    
 }
 
 process dehost_fastq {
@@ -233,15 +276,14 @@ process dehost_fastq {
     publishDir path: "${params.outdir}/dehosted/bam", pattern: "${sample_id}*bam", mode: "copy"
     publishDir path: "${params.outdir}/dehosted/metrics", pattern: "${sample_id}*_metrics.txt", mode: "copy"
 
-
     input:
     tuple val(sample_id), path(reads_1), path(reads_2)
-    val(virus_reference_name)
-    path(index_name)
-    path("*")
+    path(virus_reference_list)
+    tuple path(index_name), path("*")
 
     output:
-    tuple val(sample_id), path("${sample_id}_R1.dehost.fastq.gz"), path("${sample_id}_R2.dehost.fastq.gz"), emit: fastqs
+    tuple val(sample_id), path("${sample_id}_R1.dehost.fastq.gz"), path("${sample_id}_R2.dehost.fastq.gz"), emit: fastq
+    tuple val(sample_id), path("${sample_id}.dehosted.bam"), emit: bam
     tuple val(sample_id), path("${sample_id}_metrics.txt"), emit: metrics
 
     script: 
@@ -249,7 +291,7 @@ process dehost_fastq {
     // dehost.py -k ${virus_names.join(' ')}
     """
     bwa mem -t ${task.cpus} -T 30 ${index_name} ${reads_1} ${reads_2} | \
-    dehost.py -k ${virus_reference_name} -n ${sample_id} -o ${sample_id}.dehosted.bam 2> ${sample_id}_metrics.txt
+    dehost.py -r ${virus_reference_list} -n ${sample_id} -o ${sample_id}.dehosted.bam 2> ${sample_id}_metrics.txt
     samtools sort -n --threads ${task.cpus} ${sample_id}.dehosted.bam | \
     samtools fastq --threads ${task.cpus} -1 ${sample_id}_R1.dehost.fastq.gz -2 ${sample_id}_R2.dehost.fastq.gz -0 /dev/null -s /dev/null -n
     """
