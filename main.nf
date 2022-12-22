@@ -10,30 +10,32 @@ nextflow.enable.dsl = 2
 
 // include { pipeline_provenance } from './modules/provenance.nf'
 // include { collect_provenance } from './modules/provenance.nf'
-include { fastp ; cutadapt; fastQC; fastq_check} from './modules/qc.nf'
-include { run_kraken; kraken_filter; index_composite_reference ; build_composite_reference; dehost_fastq } from './modules/qc.nf'
-include { make_blast_database ; run_blastn ; filter_alignments ; get_references } from './modules/blast.nf'
+include { fastp ; cutadapt; fastQC; fastq_check; } from './modules/qc.nf'
+include { run_kraken; kraken_filter; index_composite_reference ; build_composite_reference; get_reference_headers; dehost_fastq } from './modules/qc.nf'
+include { make_blast_database ; run_blastn ; filter_alignments ; get_best_references } from './modules/blast.nf'
 include { assembly } from './modules/assembly.nf'
 include { create_bwa_index; create_fasta_index; map_reads; sort_filter_sam; index_bam } from './modules/mapping.nf'
-include { run_freebayes; run_mpileup } from './modules/variant_calling.nf'
+include { run_freebayes; run_mpileup ; get_common_snps } from './modules/variant_calling.nf'
+include { mask_low_coverage; make_consensus } from './modules/consensus.nf'
 include { multiqc } from './modules/multiqc.nf'
 
 println "HELLO. STARTING NOROVIRUS METAGENOMICS PIPELINE."
+println "${LocalDateTime.now()}"
 
 // prints to the screen and to the log
 log.info """Norovirus Metagenomics Pipeline
-		===================================
-		projectDir        : ${projectDir}
-		launchDir         : ${launchDir}
-		primers           : ${params.primers}
-		blast_db          : ${params.blast_db}
-		fastqInputDir     : ${params.fastq_input}
-		outdir            : ${params.outdir}
-		run_name          : ${params.run_name}
-		git repo          : $workflow.repository
-		git version       : $workflow.revision [$workflow.commitId]
-		user              : $workflow.userName
-		""".stripIndent()
+===================================
+projectDir        : ${projectDir}
+launchDir         : ${launchDir}
+primers           : ${params.primers}
+blast_db          : ${params.blast_db}
+fastqInputDir     : ${params.fastq_input}
+outdir            : ${params.outdir}
+run_name          : ${params.run_name}
+git repo          : $workflow.repository
+git version       : $workflow.revision [$workflow.commitId]
+user              : $workflow.userName
+""".stripIndent()
 
 // database          : ${params.db}
 // Git repository    : $workflow.repository
@@ -56,10 +58,11 @@ workflow {
 	//ch_pipeline_provenance = pipeline_provenance(ch_pipeline_name.combine(ch_pipeline_version).combine(ch_start_time))
 
 	ch_primers = Channel.fromPath(params.adapters_path)
-	ch_ref_names = Channel.fromList(params.virus_ref_names).collect()
+	//ch_ref_names = Channel.fromList(params.virus_ref_names).collect()
 	ch_composite_paths = Channel.fromList([params.human_ref, params.virus_ref]).collect()
 	ch_human_ref = Channel.from(params.human_ref)
-	ch_blast_db_path = Channel.from(params.blast_db)
+	ch_centrifuge_db = Channel.from(params.centrifuge_db)
+	ch_virus_database = Channel.from(params.blast_db)
 	ch_fastq_input = Channel.fromFilePairs( params.fastq_search_path, flat: true ).map{ it -> [it[0].split('_')[0], it[1], it[2]] }.unique{ it -> it[0] }
 
 	main:
@@ -75,47 +78,52 @@ workflow {
 		// KRAKEN FILTERING
 		run_kraken(fastp.out.trimmed_reads)
 		kraken_filter(fastp.out.trimmed_reads.join(run_kraken.out))
-
-
+		
+		// DEHOSTING
+		build_composite_reference(ch_human_ref.combine(ch_virus_database))
+		index_composite_reference(build_composite_reference.out)
+		get_reference_headers(ch_virus_database)
+		dehost_fastq(
+			kraken_filter.out,
+			get_reference_headers.out.first(), 
+			index_composite_reference.out.first()
+		) 
 
 		// ASSEMBLY
-		assembly(fastp.out.trimmed_reads)
+		assembly(dehost_fastq.out.fastq)
 
-		// // BLAST SEARCH
-		make_blast_database(ch_blast_db_path).first().set{ch_blast_db} // first() converts the channel from a consumable queue channel into an infinite single-value channel
+		// BLAST SEARCH
+		make_blast_database(ch_virus_database).first().set{ch_blast_db} // first() converts the channel from a consumable queue channel into an infinite single-value channel
 		run_blastn(assembly.out, ch_blast_db)
 		filter_alignments(run_blastn.out)
 
 		if (params.assemble){
 			ch_ref_seqs = filter_alignments.out.join(assembly.out)
 		} else {
-			ch_ref_seqs = filter_alignments.out.combine(ch_blast_db_path)
+			ch_ref_seqs = filter_alignments.out.combine(ch_virus_database)
 		}
 
-		get_references(ch_ref_seqs)
+		get_best_references(ch_ref_seqs)
 
-		// DEHOSTING
-		build_composite_reference(ch_human_ref.combine(get_references.out.map{it -> it[1]})).set{ch_composite_ref}
 
-		index_composite_reference(ch_composite_ref)
+		create_bwa_index(get_best_references.out)
 
-		dehost_fastq(kraken_filter.out, index_composite_reference.out.header, index_composite_reference.out.fasta, index_composite_reference.out.index)
+		create_fasta_index(get_best_references.out)
 
-		create_bwa_index(get_references.out)
-
-		create_fasta_index(get_references.out)
-
+		// READ MAPPING, SORTING, FILTERING
 		map_reads(fastp.out.trimmed_reads.join(create_bwa_index.out))
-
 		sort_filter_sam(map_reads.out)
-
 		index_bam(sort_filter_sam.out)
 
+		// VARIANT CALLING
 		run_freebayes(sort_filter_sam.out.join(create_fasta_index.out))
-
 		run_mpileup(sort_filter_sam.out.join(create_fasta_index.out))
-
+		get_common_snps(run_freebayes.out.join(run_mpileup.out))
 		
+		// CONSENSUS GENERATION 
+		mask_low_coverage(sort_filter_sam.out)
+		make_consensus(get_common_snps.out.join(get_best_references.out).join(mask_low_coverage.out))
+
 		// FluViewer(cutadapt.out.primer_trimmed_reads.combine(ch_db))
 		// FluViewer_assemble(cutadapt.out.primer_trimmed_reads.combine(ch_db))
 		// QualiMap(FluViewer.out.alignment)
