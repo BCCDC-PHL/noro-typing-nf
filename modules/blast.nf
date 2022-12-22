@@ -60,22 +60,22 @@ process filter_alignments {
 
 }
 
-process get_references {
+process get_best_references {
 
     tag {sample_id}
 
-    publishDir "${params.outdir}/blastn/final_refs", pattern: "${sample_id}.refs.fasta" , mode:'copy'
+    publishDir "${params.outdir}/blastn/final_refs", pattern: "${sample_id}.ref.fasta" , mode:'copy'
 
     input:
     tuple val(sample_id), path(blast_filtered), path(references)
 
     output:
-    tuple val(sample_id), path("${sample_id}.refs.fasta")
+    tuple val(sample_id), path("${sample_id}.ref.fasta")
 
     script: 
-    mode = params.assemble ? "-c" : "" 
+    contig_mode = params.assemble ? "-c" : "" 
 
     """
-    get_references.py -b ${blast_filtered} -s ${references} ${mode} -o ${sample_id}.refs.fasta
+    get_references.py -b ${blast_filtered} -s ${references} ${contig_mode} -o ${sample_id}.ref.fasta
     """
 }
