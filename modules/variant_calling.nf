@@ -50,8 +50,8 @@ process get_common_snps {
     tuple val(sample_id), path("${sample_id}.common.vcf.gz"), path("${sample_id}*common.vcf.gz.csi")
     
     """
-    zcat ${fb_vcf} | bgzip -c > ${fb_vcf}b
-    zcat ${mp_vcf} | bgzip -c > ${mp_vcf}b
+    bcftools sort --output-type b ${fb_vcf} > ${fb_vcf}b
+    bcftools sort --output-type b ${mp_vcf} > ${mp_vcf}b
 
     bcftools index ${fb_vcf}b
     bcftools index ${mp_vcf}b
