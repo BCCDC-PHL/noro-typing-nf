@@ -11,6 +11,7 @@ dependencies:
   - bc=1.07.1=h7f98852_0
   - bcftools=1.16=hfe4b78e_1
   - bedtools=2.30.0=h468198e_3
+  - biopython=1.80=py310h5764c6d_0
   - blast=2.13.0=hf3cf87c_0
   - brotli=1.0.9=h166bdaf_8
   - brotli-bin=1.0.9=h166bdaf_8
@@ -20,10 +21,13 @@ dependencies:
   - ca-certificates=2022.12.7=ha878542_0
   - cairo=1.16.0=ha61ee94_1014
   - certifi=2022.12.7=pyhd8ed1ab_0
+  - cffi=1.15.1=py310h255011f_3
   - circos=0.69.8=hdfd78af_1
   - contourpy=1.0.6=py310hbf28c38_0
   - curl=7.86.0=h7bff187_1
+  - cutadapt=4.2=py310h1425a21_0
   - cycler=0.11.0=pyhd8ed1ab_0
+  - dnaio=0.10.0=py310h1425a21_0
   - entrez-direct=16.2=he881be0_1
   - expat=2.5.0=h27087fc_0
   - fastp=0.23.2=h5f740d0_3
@@ -110,6 +114,7 @@ dependencies:
   - packaging=22.0=pyhd8ed1ab_0
   - pandas=1.5.2=py310h769672d_0
   - parallel=20221122=ha770c72_0
+  - pbzip2=1.1.13=0
   - pcre=8.45=h9c3ff4c_0
   - pcre2=10.40=hc3806b6_0
   - perl=5.32.1=2_h7f98852_perl5
@@ -188,14 +193,17 @@ dependencies:
   - perl-xml-parser=2.44_01=pl5321hc3e0081_1003
   - perl-xml-sax=1.02=pl5321hd8ed1ab_0
   - perl-xml-sax-base=1.09=pl5321hd8ed1ab_0
+  - pigz=2.6=h27826a3_0
   - pillow=9.2.0=py310h454ad03_3
   - pip=22.3.1=pyhd8ed1ab_0
   - pixman=0.40.0=h36c2ea0_0
   - pthread-stubs=0.4=h36c2ea0_1001
+  - pycparser=2.21=pyhd8ed1ab_0
   - pyparsing=3.0.9=pyhd8ed1ab_0
   - pysam=0.20.0=py310hff46b53_0
   - python=3.10.8=h257c98d_0_cpython
   - python-dateutil=2.8.2=pyhd8ed1ab_0
+  - python-isal=1.1.0=py310h5764c6d_1
   - python_abi=3.10=3_cp310
   - pytz=2022.6=pyhd8ed1ab_0
   - quast=5.2.0=py310pl5321hc8f18ef_2
@@ -214,6 +222,7 @@ dependencies:
   - vcflib=1.0.3=ha04fe3b_2
   - wget=1.20.3=ha56f1ee_1
   - wheel=0.38.4=pyhd8ed1ab_0
+  - xopen=1.7.0=py310hff52083_0
   - xorg-fixesproto=5.0=h7f98852_1002
   - xorg-inputproto=2.3.2=h7f98852_1002
   - xorg-kbproto=1.0.7=h7f98852_1002
@@ -233,5 +242,6 @@ dependencies:
   - xorg-xproto=7.0.31=h7f98852_1007
   - xz=5.2.6=h166bdaf_0
   - zlib=1.2.13=h166bdaf_4
+  - zstandard=0.19.0=py310hdeb6495_1
   - zstd=1.5.2=h6239696_4
 prefix: /home/john.palmer/miniconda3/envs/noro
