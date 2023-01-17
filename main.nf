@@ -15,8 +15,8 @@ include { merge_databases; cutadapt; fastp; fastp_json_to_csv; run_kraken; krake
 include { build_composite_reference; index_composite_reference ; get_reference_headers; dehost_fastq } from './modules/prep.nf'
 include { make_blast_database; run_self_blast; run_blastn; filter_alignments; get_best_references; run_blastx } from './modules/blast.nf'
 //include { p_make_blast_database; p_run_self_blast; p_run_blastn; p_filter_alignments; p_get_best_references; p_run_blastx } from './modules/p_blast.nf'
-include { assembly } from './modules/assembly.nf'
-include { create_bwa_index; create_fasta_index; map_reads; sort_filter_sam; index_bam } from './modules/mapping.nf'
+include { assembly; run_concoct } from './modules/assembly.nf'
+include { create_bwa_index; create_fasta_index; map_reads; sort_filter_index_sam; index_bam } from './modules/mapping.nf'
 include { run_freebayes; run_mpileup ; get_common_snps } from './modules/variant_calling.nf'
 include { mask_low_coverage; make_consensus } from './modules/consensus.nf'
 include { make_multifasta; make_msa; make_tree } from './modules/phylo.nf'
@@ -128,7 +128,7 @@ workflow {
 		//hash_files(ch_fastq_input.map{ it -> [it[0], [it[1], it[2]]] }.combine(Channel.of("fastq_input")))
 		
 		// UNION DATABASE
-		merge_databases(ch_blastdb_gtype_fasta, ch_blastdb_ptype_fasta).set{ch_union_db}
+		//merge_databases(ch_blastdb_gtype_fasta, ch_blastdb_ptype_fasta).set{ch_union_db}
 
 		// QUALITY CONTROL 
 		cutadapt(ch_fastq_input.combine(ch_adapters))
@@ -140,49 +140,55 @@ workflow {
 		fastq_check(fastp.out.trimmed_reads)
 		fastq_check.out.formatted.collectFile(name: "${params.outdir}/fastq_qual/fastq_stats.tsv", keepHeader: true, skip: 1)
 		
-		// KRAKEN FILTERING
-		run_kraken(fastp.out.trimmed_reads)
-		kraken_filter(fastp.out.trimmed_reads.join(run_kraken.out))
-		
-		// DEHOSTING
-		build_composite_reference(ch_human_ref.combine(ch_union_db))
-		index_composite_reference(build_composite_reference.out)
-		get_reference_headers(ch_union_db)
-		dehost_fastq(
-			kraken_filter.out,
-			get_reference_headers.out.first(), 
-			index_composite_reference.out.first()
-		) 
-
-		// ASSEMBLY
-		assembly(dehost_fastq.out.fastq)
-		run_quast(assembly.out.map{ it -> it[1]}.collect())
-
-		genotyping( assembly.out, ch_blastdb_gtype_fasta)
-		ptyping(assembly.out, ch_blastdb_ptype_fasta)
-
-		create_bwa_index(genotyping.out.refs)
-
-		
-
-		// READ MAPPING, SORTING, FILTERING
+		assembly(fastp.out.trimmed_reads)
+		create_bwa_index(assembly.out)
 		map_reads(fastp.out.trimmed_reads.join(create_bwa_index.out))
-		sort_filter_sam(map_reads.out)
-		index_bam(sort_filter_sam.out)
+		sort_filter_index_sam(map_reads.out)
+		run_concoct(assembly.out.join(sort_filter_index_sam.out))
 
-		// VARIANT CALLING
-		create_fasta_index(genotyping.out.refs)
-		run_freebayes(sort_filter_sam.out.join(create_fasta_index.out))
-		run_mpileup(sort_filter_sam.out.join(create_fasta_index.out))
-		get_common_snps(run_freebayes.out.join(run_mpileup.out))
+		// // KRAKEN FILTERING
+		// run_kraken(fastp.out.trimmed_reads)
+		// kraken_filter(fastp.out.trimmed_reads.join(run_kraken.out))
 		
-		// CONSENSUS GENERATION 
-		mask_low_coverage(sort_filter_sam.out)
-		make_consensus(get_common_snps.out.join(genotyping.out.refs).join(mask_low_coverage.out))
+		// // DEHOSTING
+		// build_composite_reference(ch_human_ref.combine(ch_union_db))
+		// index_composite_reference(build_composite_reference.out)
+		// get_reference_headers(ch_union_db)
+		// dehost_fastq(
+		// 	kraken_filter.out,
+		// 	get_reference_headers.out.first(), 
+		// 	index_composite_reference.out.first()
+		// ) 
 
-		make_multifasta(make_consensus.out.collect())
-		make_msa(make_multifasta.out)
-		make_tree(make_msa.out)
+		// // ASSEMBLY
+		// assembly(dehost_fastq.out.fastq)
+		// run_quast(assembly.out.map{ it -> it[1]}.collect())
+
+		// genotyping( assembly.out, ch_blastdb_gtype_fasta)
+		// ptyping(assembly.out, ch_blastdb_ptype_fasta)
+
+		// create_bwa_index(genotyping.out.refs)
+
+		
+
+		// // READ MAPPING, SORTING, FILTERING
+		// map_reads(fastp.out.trimmed_reads.join(create_bwa_index.out))
+		// sort_filter_sam(map_reads.out)
+		// index_bam(sort_filter_sam.out)
+
+		// // VARIANT CALLING
+		// create_fasta_index(genotyping.out.refs)
+		// run_freebayes(sort_filter_sam.out.join(create_fasta_index.out))
+		// run_mpileup(sort_filter_sam.out.join(create_fasta_index.out))
+		// get_common_snps(run_freebayes.out.join(run_mpileup.out))
+		
+		// // CONSENSUS GENERATION 
+		// mask_low_coverage(sort_filter_sam.out)
+		// make_consensus(get_common_snps.out.join(genotyping.out.refs).join(mask_low_coverage.out))
+
+		// make_multifasta(make_consensus.out.collect())
+		// make_msa(make_multifasta.out)
+		// make_tree(make_msa.out)
 
 
 		// QualiMap(FluViewer.out.alignment)
