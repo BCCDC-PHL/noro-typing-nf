@@ -1,48 +1,39 @@
 # %%
-import os
+import os, sys
 import pandas as pd
+import re
 from Bio import SeqIO
 from Bio import Entrez
+from collections import defaultdict, Counter
 
-# %%
-base = '/home/john.palmer/work/norovirus/blast'
-os.chdir(base)
+Entrez.email = os.environ['NCBI_EMAIL']
+Entrez.api_key = os.environ['NCBI_API_KEY']
 
-# %%
-df = pd.read_csv('subtypes.csv')
-df['combined'] = df['accession'] + '|' + df['genotype'] + '|' + df['strain']
+def fetch_entries(accno_list, db_name, return_type):
 
-# %%
-Entrez.email = 'john.palmer1288@gmail.com'
+	accnos = pd.Series(accno_list)
 
-# %%
-os.getcwd()
+	accnos = accnos.drop_duplicates()
+	
+	print(accnos.to_list()[0:10])
 
-# %%
-result = Entrez.efetch(db='nucleotide', id=df['accession'].to_list(), rettype='fasta',retmode='text')
-with open('entrez.fasta', 'w') as outfile:
-	for i in result:
-		outfile.write(i)
-seqs = SeqIO.to_dict(SeqIO.parse('entrez.fasta','fasta'))
+	query = Entrez.efetch(db=db_name, id=accnos.to_list(), rettype=return_type, retmode='text')
 
-# %%
-df['accession'].duplicated().sum()
-df.loc[df['accession'].duplicated()]
-df = df.drop_duplicates('accession')
+	with open('efetch.fasta', 'w') as outfile:
+		for i in query:
+			outfile.write(i)
 
-# %%
-list(seqs.values())[0:5]
 
-# %%
-# %%
-for header, seq in seqs.items():
-	header = header.split(".")[0]
-	seq.name = '' 
-	seq.id = df.loc[df['accession'] == header, 'combined'].squeeze()
-	print(header)
-	seq.description = '' 
+if __name__ == '__main__':
 
-# %%
-SeqIO.write(list(seqs.values()), 'norovirus-db-v2.fasta', 'fasta')
+	if len(sys.argv) > 1:
+		with open(sys.argv[1], 'r') as handle:
+			accnos = [x.lstrip(">").strip() for x in handle.readlines()]
+			print(accnos[0:10])
+	else:
+		# simple test case
+		accnos = ['BBB94175.1']
+
+	fetch_entries(accnos, 'nucleotide', 'fasta_cds_aa')
 
 

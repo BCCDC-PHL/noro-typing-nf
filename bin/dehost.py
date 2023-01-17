@@ -5,8 +5,6 @@ import pysam
 import os
 import sys
 import subprocess
-from tools import *
-
 from collections import defaultdict
 from pathlib import Path
 
