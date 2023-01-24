@@ -23,16 +23,18 @@ process run_shovill {
 	tag {sample_id}
 
     publishDir "${params.outdir}/assembly", pattern: "${sample_id}.contigs.fa", mode:'copy'
-	publishDir "${params.outdir}/assembly/full", pattern: "${sample_id}.spades.tar.gz", mode:'copy'
+	publishDir "${params.outdir}/assembly/full", pattern: "${sample_id}.shovill.tar.gz", mode:'copy'
 
 	input:
 	tuple val(sample_id), path(reads_1), path(reads_2)
 
 	output: 
-	tuple val(sample_id), path("${sample_id}.contigs.fa")
+	tuple val(sample_id), path("${sample_id}")
 	
 	"""
-	shovill --outdir --cpus ${task.cpus} --R1 ${reads_1} --R2 ${reads_2}
+	shovill --outdir ${sample_id} --cpus ${task.cpus} --R1 ${reads_1} --R2 ${reads_2}
+	cp ${sample_id}/contigs.fa ./${sample_id}.contigs.fa &&
+	tar -czvf ${sample_id}.shovill.tar.gz ${sample_id}
 	"""
 
 }
@@ -53,10 +55,10 @@ process run_metabat {
 	output: 
 	tuple val(sample_id), path("${sample_id}*")
 	
+	script: 
+	def args = task.ext.args ?: ''
 	"""
-	runMetaBat.sh ${contig_fasta} ${aligned_bam}
-	mkdir -p metabat
-	mv ${sample_id} ${sample_id}_metabat
+	metabat -i ${contig_fasta} -o ${sample_id} ${args}
 	"""
 }
 
