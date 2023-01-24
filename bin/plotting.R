@@ -40,8 +40,7 @@ p <- coverage %>%
   scale_y_log10(labels=comma)+
   facet_wrap(vars(genotype), nrow = 2)
   
-print(coverage)
 
-ggsave(plot = p, filename = paste0(Accession, "_depth_plots.pdf"), device = "pdf", width = 8, units = "in")
+ggsave(plot = p, filename = args[2], device = "pdf", width = 8, units = "in")
 
   
