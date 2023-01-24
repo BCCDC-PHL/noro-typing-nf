@@ -130,3 +130,5 @@ dmypy.json
 
 # Custom
 cache/
+
+conf/user.config
