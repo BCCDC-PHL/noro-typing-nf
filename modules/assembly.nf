@@ -19,28 +19,51 @@ process assembly {
 
 }
 
+process run_shovill {
+	tag {sample_id}
+
+    publishDir "${params.outdir}/assembly", pattern: "${sample_id}.contigs.fa", mode:'copy'
+	publishDir "${params.outdir}/assembly/full", pattern: "${sample_id}.spades.tar.gz", mode:'copy'
+
+	input:
+	tuple val(sample_id), path(reads_1), path(reads_2)
+
+	output: 
+	tuple val(sample_id), path("${sample_id}.contigs.fa")
+	
+	"""
+	shovill --outdir --cpus ${task.cpus} --R1 ${reads_1} --R2 ${reads_2}
+	"""
+
+}
+
 process run_metabat {
+
+	errorStrategy 'ignore'
 
 	tag {sample_id}
 
-	publishDir "${params.outdir}/assembly/binning", pattern: "${sample_id}*", mode:'copy'
+	conda "metabat2"
+
+	publishDir "${params.outdir}/assembly/binning/mb", pattern: "${sample_id}*", mode:'copy'
 
 	input:
-	tuple val(sample_id), path(contig_fasta), path(aligned_bam)
+	tuple val(sample_id), path(contig_fasta), path(aligned_bam), path(bam_index)
 
 	output: 
-	tuple val(sample_id), path("${sample_id}.metabat.tar.gz")
+	tuple val(sample_id), path("${sample_id}*")
 	
 	"""
 	runMetaBat.sh ${contig_fasta} ${aligned_bam}
 	mkdir -p metabat
-	mv ${sample_id} metabat
-	tar -czvf ${sample_id}.metabat.tar.gz metabat/*
+	mv ${sample_id} ${sample_id}_metabat
 	"""
 }
 
 process run_concoct {
 	tag {sample_id}
+
+	errorStrategy 'ignore'
 
 	label 'medium'
 

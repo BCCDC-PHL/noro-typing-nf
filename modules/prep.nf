@@ -43,7 +43,8 @@ process fastp {
       -O ${sample_id}_R2.trim.fastq.gz \
       -j ${sample_id}.fastp.json \
       -h ${sample_id}.fastp.html \
-      --detect_adapter_for_pe
+      --detect_adapter_for_pe \
+      
     """
 }
 
@@ -152,19 +153,19 @@ process kraken_filter {
 process run_centrifuge {
     tag {sample_id}
 
-    label 'heavy'
+    label 'medium'
 
-    conda "${projectDir}/environments/kraken.yaml"
+    conda "centrifuge"
 
-    publishDir path: "${params.outdir}/centrifuge/reports", pattern: "${sample_id}.kraken.report", mode: "copy"
-    publishDir path: "${params.outdir}/centrifuge/output", pattern: "${sample_id}.kraken.out", mode: "copy"
+    publishDir path: "${params.outdir}/centrifuge/reports", pattern: "${sample_id}.cent.report", mode: "copy"
+    publishDir path: "${params.outdir}/centrifuge/output", pattern: "${sample_id}.cent.out", mode: "copy"
 
 
     input: 
     tuple val(sample_id), path(reads_1), path(reads_2)
 
     output:
-    tuple val(sample_id), path("${sample_id}.kraken.report"), path("${sample_id}.kraken.out")
+    tuple val(sample_id), path("${sample_id}.cent.report"), path("${sample_id}.cent.out")
 
     """
     centrifuge  --threads ${task.cpus} \
