@@ -115,7 +115,6 @@ workflow {
 
 	//ch_pipeline_provenance = pipeline_provenance(ch_pipeline_name.combine(ch_pipeline_version).combine(ch_start_time))
 
-	ch_adapters = Channel.fromPath(params.adapters_path)
 	//ch_ref_names = Channel.fromList(params.virus_ref_names).collect()
 	ch_composite_paths = Channel.fromList([params.human_ref, params.virus_ref]).collect()
 	ch_human_ref = Channel.from(params.human_ref)
@@ -131,7 +130,7 @@ workflow {
 		merge_databases(ch_blastdb_gtype_fasta, ch_blastdb_ptype_fasta).set{ch_union_db}
 
 		// QUALITY CONTROL 
-		cutadapt(ch_fastq_input.combine(ch_adapters))
+		cutadapt(ch_fastq_input)
 		fastp(cutadapt.out.trimmed_reads)
 		// fastp(ch_fastq_input)
 		fastp_json_to_csv(fastp.out.json)

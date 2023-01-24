@@ -71,7 +71,7 @@ process cutadapt {
     publishDir "${params.outdir}/cutadapt", pattern: "*cutadapt.log", mode:'copy'
 
     input:
-    tuple val(sample_id), path(reads_1), path(reads_2), path(adapters)
+    tuple val(sample_id), path(reads_1), path(reads_2)
 
     output:
     tuple val(sample_id), path("${sample_id}_R1.trimmed.fastq.gz"), path("${sample_id}_R2.trimmed.fastq.gz"), emit: trimmed_reads
@@ -84,8 +84,8 @@ process cutadapt {
     printf -- "  tool_name: cutadapt\\n  tool_version: \$(cutadapt --version 2>&1 | cut -d ' ' -f 2)\\n" >> ${sample_id}_cutadapt_provenance.yml
     cutadapt \
       -j ${task.cpus} \
-      -g file:${adapters} \
-      -G file:${adapters} \
+      -g file:${params.primers} \
+      -G file:${params.primers} \
       -o ${sample_id}_R1.trimmed.fastq.gz \
       -p ${sample_id}_R2.trimmed.fastq.gz \
       ${reads_1} \
