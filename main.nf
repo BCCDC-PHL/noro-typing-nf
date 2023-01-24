@@ -11,14 +11,15 @@ nextflow.enable.dsl = 2
 // include { pipeline_provenance } from './modules/provenance.nf'
 // include { collect_provenance } from './modules/provenance.nf'
 include { fastQC; fastq_check; run_quast} from './modules/qc.nf'
-include { merge_databases; cutadapt; fastp; fastp_json_to_csv; run_kraken; kraken_filter } from './modules/prep.nf' 
+include { merge_databases; cutadapt; fastp; fastp_json_to_csv; run_kraken; kraken_filter; run_centrifuge } from './modules/prep.nf' 
 include { build_composite_reference; index_composite_reference ; get_reference_headers; dehost_fastq } from './modules/prep.nf'
 include { make_blast_database; run_self_blast; run_blastn; filter_alignments; get_best_references; run_blastx } from './modules/blast.nf'
 //include { p_make_blast_database; p_run_self_blast; p_run_blastn; p_filter_alignments; p_get_best_references; p_run_blastx } from './modules/p_blast.nf'
-include { assembly; run_concoct } from './modules/assembly.nf'
+include { assembly; run_concoct; run_metabat } from './modules/assembly.nf'
 include { create_bwa_index; create_fasta_index; map_reads; sort_filter_index_sam; index_bam } from './modules/mapping.nf'
 include { run_freebayes; run_mpileup ; get_common_snps } from './modules/variant_calling.nf'
 include { mask_low_coverage; make_consensus } from './modules/consensus.nf'
+include { get_coverage; plot_coverage } from './modules/coverage.nf'
 include { make_multifasta; make_msa; make_tree } from './modules/phylo.nf'
 include { multiqc } from './modules/multiqc.nf'
 
@@ -129,7 +130,7 @@ workflow {
 		
 		// UNION DATABASE
 		//merge_databases(ch_blastdb_gtype_fasta, ch_blastdb_ptype_fasta).set{ch_union_db}
-
+		//ch_fastq_input.combine(ch_adapters).subscribe{println "value: $it"}
 		// QUALITY CONTROL 
 		cutadapt(ch_fastq_input.combine(ch_adapters))
 		fastp(cutadapt.out.trimmed_reads)
@@ -145,9 +146,14 @@ workflow {
 		map_reads(fastp.out.trimmed_reads.join(create_bwa_index.out))
 		sort_filter_index_sam(map_reads.out)
 		run_concoct(assembly.out.join(sort_filter_index_sam.out))
+		run_metabat(assembly.out.join(sort_filter_index_sam.out))
+
+		get_coverage(sort_filter_index_sam.out)
+		plot_coverage(get_coverage.out.coverage_file)
 
 		// // KRAKEN FILTERING
-		// run_kraken(fastp.out.trimmed_reads)
+		run_kraken(fastp.out.trimmed_reads)
+		//run_centrifuge(fastp.out.trimmed_reads)
 		// kraken_filter(fastp.out.trimmed_reads.join(run_kraken.out))
 		
 		// // DEHOSTING

@@ -5,17 +5,17 @@ process get_coverage {
 	publishDir "${params.outdir}/qc_coverage/bed", mode:'copy'
 
 	input:
-	tuple val(sample_id), path(bamfile)
+	tuple val(sample_id), path(bam_file), path(bam_index)
 
 	output:
-	tuple val(sample_id), path("*_alignment.coverage"),emit: coverage_file
+	tuple val(sample_id), path("*_coverage.bed"),emit: coverage_file
 	tuple val(sample_id), path("${sample_id}_samtools_provenance.yml"), emit: provenance
 
 	"""
 	printf -- "- process_name: samtools\\n" > ${sample_id}_samtools_provenance.yml
 	printf -- "  tool_name: samtools\\n tool_version: \$(samtools | sed -n '1 p'))\\n" >> ${sample_id}_samtools_provenance.yml
 
-	samtools depth -a ${bamfile} > ${sample_id}_coverage.bed
+	samtools depth -a ${bam_file} > ${sample_id}_coverage.bed
 	"""
 }
 
@@ -32,9 +32,9 @@ process plot_coverage {
 	tuple val(sample_id), path(coverage_bed)
 
 	output:
-	tuple val(sample_id), path("${sample_id}*.pdf")
+	tuple val(sample_id), path("*.pdf")
 
 	"""
-	plotting.R ${coverage_bed}
+	plotting.R ${coverage_bed} ${sample_id}.depth.pdf
 	"""
 }
