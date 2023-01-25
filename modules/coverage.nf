@@ -8,7 +8,7 @@ process get_coverage {
 	tuple val(sample_id), path(bamfile)
 
 	output:
-	tuple val(sample_id), path("*_alignment.coverage"),emit: coverage_file
+	tuple val(sample_id), path("*bed"),emit: coverage_file
 	tuple val(sample_id), path("${sample_id}_samtools_provenance.yml"), emit: provenance
 
 	"""
