@@ -18,6 +18,7 @@ include { make_blast_database; run_self_blast; run_blastn; filter_alignments; ge
 include { assembly } from './modules/assembly.nf'
 include { create_bwa_index; create_fasta_index; map_reads; sort_filter_sam; index_bam } from './modules/mapping.nf'
 include { run_freebayes; run_mpileup ; get_common_snps } from './modules/variant_calling.nf'
+include { get_coverage; plot_coverage} from "./modules/coverage.nf"
 include { mask_low_coverage; make_consensus } from './modules/consensus.nf'
 include { make_multifasta; make_msa; make_tree } from './modules/phylo.nf'
 include { multiqc } from './modules/multiqc.nf'
@@ -168,6 +169,10 @@ workflow {
 		map_reads(fastp.out.trimmed_reads.join(create_bwa_index.out))
 		sort_filter_sam(map_reads.out)
 		index_bam(sort_filter_sam.out)
+
+		// PLOT COVERAGE
+		get_coverage(sort_filter_sam.out)
+		plot_coverage(get_coverage.out.coverage_file)
 
 		// VARIANT CALLING
 		create_fasta_index(genotyping.out.refs)
