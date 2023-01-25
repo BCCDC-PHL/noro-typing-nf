@@ -84,3 +84,23 @@ process run_quast {
     quast -o quast_results ${contig_files}
     """    
 }
+
+process run_mapping_qc {
+    tag { sample_id }
+
+    publishDir "${params.outdir}/qc_mapping/plots", pattern: "${sample_id}.depth.png", mode: 'copy'
+    publishDir "${params.outdir}/qc_mapping/raw", pattern: "${sample_id}*csv", mode: 'copy'
+
+    input:
+    tuple sample_id, path(bam), path(bam_index), path(consensus), path(ref)
+
+    output:
+    path "${sample_id}.qc.csv", emit: csv
+    path "${sample_id}.depth.png", emit: plot
+
+    script:
+
+    """
+    qc.py ${qcSetting} --outfile ${sample_id}.qc.csv --sample ${sample_id} --ref ${ref} --bam ${bam} --consensus ${consensus}
+    """
+}
