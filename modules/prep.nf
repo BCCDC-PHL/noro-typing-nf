@@ -20,6 +20,7 @@ process fastp {
 
     publishDir "${params.outdir}/fastp", pattern: "${sample_id}*_R{1,2}.trim.fastq.gz" , mode:'copy'
     publishDir "${params.outdir}/fastp/html", pattern: "${sample_id}*html" , mode:'copy'
+    publishDir "${params.outdir}/fastp/json", pattern: "${sample_id}*json" , mode:'copy'
 
     input:
     tuple val(sample_id), path(fastq1), path(fastq2)
