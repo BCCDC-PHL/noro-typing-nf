@@ -1,4 +1,4 @@
-process assembly {
+process run_spades {
 
 	tag {sample_id}
 
@@ -22,6 +22,8 @@ process assembly {
 process run_shovill {
 	tag {sample_id}
 
+	conda "shovill"
+
     publishDir "${params.outdir}/assembly", pattern: "${sample_id}.contigs.fa", mode:'copy'
 	publishDir "${params.outdir}/assembly/full", pattern: "${sample_id}.shovill.tar.gz", mode:'copy'
 
@@ -29,7 +31,7 @@ process run_shovill {
 	tuple val(sample_id), path(reads_1), path(reads_2)
 
 	output: 
-	tuple val(sample_id), path("${sample_id}")
+	tuple val(sample_id), path("${sample_id}.contigs.fa")
 	
 	"""
 	shovill --outdir ${sample_id} --cpus ${task.cpus} --R1 ${reads_1} --R2 ${reads_2}

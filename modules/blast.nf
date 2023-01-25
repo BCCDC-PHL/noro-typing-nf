@@ -109,18 +109,18 @@ process run_blastx {
 
     tag {sample_id}
 
-    publishDir "${params.outdir}/blastx/${workflow_type}", pattern: "${sample_id}*.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastx/", pattern: "${sample_id}*.tsv" , mode:'copy'
 
     input:
     tuple val(sample_id), path(contig_file)
-    tuple path(diamond_db), path("*")
 
     output:
     tuple val(sample_id), path("${sample_id}*.tsv")
 
     script:
-    workflow_type = "${diamond_db}" =~ /gtype/ ? "gtype" : "ptype" 
+    //workflow_type = "${diamond_db}" =~ /gtype/ ? "gtype" : "ptype" 
     """
-    diamond blastx --threads ${task.cpus} -d ${diamond_db} -q ${contig_file} -o ${sample_id}_blastx.tsv --outfmt "6 qseqid sseqid pident qlen slen bitscore score"
+    # diamond blastx --threads ${task.cpus} -d  -q ${contig_file} -o ${sample_id}_blastx.tsv --outfmt "6 qseqid sseqid pident qlen slen bitscore score"
+    blastx -remote -db nr -query ${contig_file} -outfmt "6 qseqid sseqid pident length saccver scinames scomnames sblastnames sskingdoms stitle staxids evalue bitscore" > ${sample_id}.blastx.tsv
     """
 }
