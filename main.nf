@@ -13,9 +13,9 @@ nextflow.enable.dsl = 2
 include { fastQC; fastq_check; run_quast} from './modules/qc.nf'
 include { merge_databases; cutadapt; fastp; fastp_json_to_csv; run_kraken; kraken_filter; run_centrifuge } from './modules/prep.nf' 
 include { build_composite_reference; index_composite_reference ; get_reference_headers; dehost_fastq } from './modules/prep.nf'
-include { make_blast_database; run_self_blast; run_blastn; filter_alignments; get_best_references; run_blastx } from './modules/blast.nf'
+include { make_blast_database; run_self_blast; run_blastn; run_blastx; filter_alignments; get_best_references; } from './modules/blast.nf'
 //include { p_make_blast_database; p_run_self_blast; p_run_blastn; p_filter_alignments; p_get_best_references; p_run_blastx } from './modules/p_blast.nf'
-include { assembly; run_concoct; run_metabat } from './modules/assembly.nf'
+include { run_spades; run_shovill; run_concoct; run_metabat } from './modules/assembly.nf'
 include { create_bwa_index; create_fasta_index; map_reads; sort_filter_index_sam; index_bam } from './modules/mapping.nf'
 include { run_freebayes; run_mpileup ; get_common_snps } from './modules/variant_calling.nf'
 include { mask_low_coverage; make_consensus } from './modules/consensus.nf'
@@ -141,34 +141,22 @@ workflow {
 		fastq_check(fastp.out.trimmed_reads)
 		fastq_check.out.formatted.collectFile(name: "${params.outdir}/fastq_qual/fastq_stats.tsv", keepHeader: true, skip: 1)
 		
-		assembly(fastp.out.trimmed_reads)
-		create_bwa_index(assembly.out)
+		run_shovill(fastp.out.trimmed_reads)
+		create_bwa_index(run_shovill.out)
 		map_reads(fastp.out.trimmed_reads.join(create_bwa_index.out))
 		sort_filter_index_sam(map_reads.out)
-		run_concoct(assembly.out.join(sort_filter_index_sam.out))
-		run_metabat(assembly.out.join(sort_filter_index_sam.out))
+		run_concoct(run_shovill.out.join(sort_filter_index_sam.out))
+		run_metabat(run_shovill.out.join(sort_filter_index_sam.out))
 
 		get_coverage(sort_filter_index_sam.out)
 		plot_coverage(get_coverage.out.coverage_file)
 
 		// // KRAKEN FILTERING
-		run_kraken(fastp.out.trimmed_reads)
-		//run_centrifuge(fastp.out.trimmed_reads)
+		// run_kraken(fastp.out.trimmed_reads)
+		run_centrifuge(fastp.out.trimmed_reads)
+		run_blastx(run_shovill.out)
 		// kraken_filter(fastp.out.trimmed_reads.join(run_kraken.out))
 		
-		// // DEHOSTING
-		// build_composite_reference(ch_human_ref.combine(ch_union_db))
-		// index_composite_reference(build_composite_reference.out)
-		// get_reference_headers(ch_union_db)
-		// dehost_fastq(
-		// 	kraken_filter.out,
-		// 	get_reference_headers.out.first(), 
-		// 	index_composite_reference.out.first()
-		// ) 
-
-		// // ASSEMBLY
-		// assembly(dehost_fastq.out.fastq)
-		// run_quast(assembly.out.map{ it -> it[1]}.collect())
 
 		// genotyping( assembly.out, ch_blastdb_gtype_fasta)
 		// ptyping(assembly.out, ch_blastdb_ptype_fasta)
@@ -203,8 +191,6 @@ workflow {
 		// Collect al the relevant filesfor MULTIQC
 		// ch_fastqc_collected = fastQC.out.zip.map{ it -> [it[1], it[2]]}.collect()
 		// multiqc(fastp.out.json.mix( cutadapt.out.log, ch_fastqc_collected ).collect().ifEmpty([]) )
-		
-		// segcov(FluViewer.out.alignment)
 
 		// ch_provenance = FluViewer.out.provenance
 		// ch_provenance = ch_provenance.join(hash_files.out.provenance).map{ it -> [it[0], [it[1]] << it[2]] }
