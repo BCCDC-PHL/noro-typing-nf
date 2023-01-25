@@ -1,5 +1,7 @@
 process assembly {
 
+	errorStrategy 'ignore'
+
 	tag {sample_id}
 
     publishDir "${params.outdir}/assembly", pattern: "${sample_id}.contigs.fa", mode:'copy'

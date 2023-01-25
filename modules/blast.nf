@@ -67,6 +67,8 @@ process run_blastn {
 
 process filter_alignments {
 
+    errorStrategy 'ignore'
+
     tag {sample_id}
 
     publishDir "${params.outdir}/blastn/${workflow_type}", pattern: "${sample_id}*filter.tsv" , mode:'copy'
@@ -87,6 +89,8 @@ process filter_alignments {
 
 process get_best_references {
 
+    errorStrategy 'ignore'
+    
     tag {sample_id}
 
     publishDir "${params.outdir}/blastn/${workflow_type}/final_refs", pattern: "${sample_id}.ref.fasta" , mode:'copy'
