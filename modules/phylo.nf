@@ -54,9 +54,12 @@ process make_tree {
     path(alignment)
 
     output:
-    path("tree_out*")
+    path("${params.run_name}*")
 
 	"""
-    iqtree -T ${task.cpus} -m GTR -s ${alignment} --prefix tree_out
+    iqtree -T ${task.cpus} -m GTR -s ${alignment} --prefix ${params.run_name}
+    mkdir -p archive
+    mv ${params.run_name}* archive
+    mv archive/${params.run_name}.treefile .
 	"""
 }
