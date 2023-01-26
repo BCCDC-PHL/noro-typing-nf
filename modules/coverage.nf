@@ -35,6 +35,6 @@ process plot_coverage {
 	tuple val(sample_id), path("${sample_id}*.pdf")
 
 	"""
-	plotting.R ${coverage_bed}
+	plotting.R ${coverage_bed} ${sample_id}_coverage.pdf
 	"""
 }
