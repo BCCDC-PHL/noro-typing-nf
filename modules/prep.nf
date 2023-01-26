@@ -37,7 +37,7 @@ process fastp {
     printf -- "  tool_name: fastp\\n  tool_version: \$(fastp --version 2>&1 | cut -d ' ' -f 2)\\n" >> ${sample_id}_fastp_provenance.yml
     fastp \
       -t ${task.cpus} \
-      --umi --umi_loc=read1 --umi_len=8 \
+      --umi --umi_loc=per_read --umi_len=8 \
       -i ${fastq1} \
       -I ${fastq2} \
       -o ${sample_id}_R1.trim.fastq.gz \
