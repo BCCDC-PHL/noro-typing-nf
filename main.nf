@@ -69,18 +69,17 @@ workflow genotyping {
 
 		// Needed for blast score ratio
 		run_self_blast(ch_blastdb)
-		filter_alignments(run_blastn.out.combine(run_self_blast.out))
 
 		if (params.assemble){
-			ch_gtype_refs = filter_alignments.out.join(assembly.out)
+			filter_alignments(run_blastn.out.join(ch_contigs).combine(run_self_blast.out))
 		} else {
-			ch_gtype_refs = filter_alignments.out.combine(ch_blastdb_fasta)
+			filter_alignments(run_blastn.out.combine(ch_blastdb_fasta).combine(run_self_blast.out))
 		}
 
-		get_best_references(ch_gtype_refs)
+		//get_best_references(ch_gtype_refs)
 	emit:
-		blast = filter_alignments.out
-		refs = get_best_references.out
+		blast = filter_alignments.out.blast
+		refs = filter_alignments.out.ref
 }
 
 workflow ptyping {
@@ -95,18 +94,17 @@ workflow ptyping {
 
 		// Needed for blast score ratio
 		run_self_blast(ch_blastdb)
-		filter_alignments(run_blastn.out.combine(run_self_blast.out))
 
 		if (params.assemble){
-			ch_gtype_refs = filter_alignments.out.join(assembly.out)
+			filter_alignments(run_blastn.out.join(ch_contigs).combine(run_self_blast.out))
 		} else {
-			ch_gtype_refs = filter_alignments.out.combine(ch_blastdb_fasta)
+			filter_alignments(run_blastn.out.combine(ch_blastdb_fasta).combine(run_self_blast.out))
 		}
-
-		get_best_references(ch_gtype_refs)
+		
+		//get_best_references(filter_alignments.out)
 	emit:
-		blast = filter_alignments.out
-		refs = get_best_references.out
+		blast = filter_alignments.out.blast
+		refs = filter_alignments.out.ref
 }
 
 workflow {
