@@ -61,7 +61,7 @@ process run_blastn {
     script:
     workflow_type = "${blast_db}" =~ /gtype/ ? "gtype" : "ptype" 
     """
-    blastn -query ${contig_file} -db ${blast_db} -outfmt "6 qseqid sseqid pident qlen slen bitscore score" > ${sample_id}_blastn.tsv
+    blastn -query ${contig_file} -db ${blast_db} -outfmt "6 qseqid sseqid pident qlen slen bitscore score" > ${sample_id}_${workflow_type}_blastn.tsv
     """
 }
 
@@ -71,18 +71,31 @@ process filter_alignments {
 
     tag {sample_id}
 
-    publishDir "${params.outdir}/blastn/${workflow_type}", pattern: "${sample_id}*filter.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow_type}/filtered", pattern: "${sample_id}*filter.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow_type}/full", pattern: "${sample_id}*full.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow_type}/final_refs", pattern: "${sample_id}*fasta" , mode:'copy'
+
 
     input: 
-    tuple val(sample_id), path(blast_output), path(self_blast_scores)
+    tuple val(sample_id), path(blast_results), path(reference_fasta), path(self_blast_scores)
 
     output:
-    tuple val(sample_id), path("${sample_id}*filter.tsv")
+    tuple val(sample_id), path("${sample_id}*filter.tsv"), emit: blast
+    tuple val(sample_id), path("${sample_id}*fasta"), emit: ref
+
 
     script:
-    workflow_type = "${self_blast_scores}" =~ /gtype/ ? "gtype" : "ptype" 
+    contig_mode = params.assemble ? "--contig_mode" : "" 
+    workflow_type = "${blast_results}" =~ /gtype/ ? "gtype" : "ptype" 
     """
-    filter_alignments.py ${blast_output} --metric bsr --ref_scores ${self_blast_scores} --min_cov ${params.min_blast_cov} --min_id ${params.min_blast_id} --output ${sample_id}_blastn_${workflow_type}_filter.tsv
+    filter_alignments.py ${blast_results} \
+    --metric bsr \
+    ${contig_mode} \
+    --seqs ${reference_fasta} \
+    --ref_scores ${self_blast_scores} \
+    --min_id ${params.min_blast_id} \
+    --tsv_out ${sample_id}_blastn_${workflow_type}_filter.tsv \
+    --fasta_out ${sample_id}_ref.fasta 
     """
 
 }
