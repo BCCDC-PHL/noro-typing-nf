@@ -27,6 +27,9 @@ process make_consensus {
     path("${sample_id}.consensus.fasta")
     
     """
-    bcftools consensus -m ${mask_file} -f ${reference} ${common_vcf} > ${sample_id}.consensus.fasta
+    bcftools consensus -m ${mask_file} -f ${reference} ${common_vcf} > ${sample_id}.consensus.fasta &&
+    TYPE=`head -n 1 ${sample_id}.consensus.fasta | cut -d"|" -f2,3 --output-delimiter=_` &&
+    sed -i 1d ${sample_id}.consensus.fasta &&
+    sed -i 1i">${sample_id}_\${TYPE}" ${sample_id}.consensus.fasta 
     """
 }
