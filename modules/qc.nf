@@ -65,20 +65,26 @@ process mapping_check {
 }
 
 process run_qualimap {
+    
+    tag { sample_id }
+
+    conda 'qualimap'
+    
     publishDir path: "${params.outdir}/qc/mapping/pdf", pattern: "${sample_id}*pdf", mode: "copy"
-    publishDir path: "${params.outdir}/qc/mapping/", pattern: "${sample_id}/", mode: "copy"
+    publishDir path: "${params.outdir}/qc/mapping/", pattern: "${sample_id}_qmap", mode: "copy"
 
     input:
-    tuple val(sample_id), path(bam_file)
+    tuple val(sample_id), path(bam_file), path(bam_index)
 
     output:
-    path("${sample_id}/"), emit: html
-    path("${sample_id}*_stats/${sample_id}.pdf"), emit: pdf
+    path("${sample_id}_qmap"), emit: main
+    path("${sample_id}.pdf"), emit: pdf
 
     script:
     """
-    qualimap bamqc -bam ${bam_file} -outdir ${sample_id} &&
-    qualimap bamqc -bam ${bam_file} -outfile ${sample_id}.pdf
+    qualimap bamqc -bam ${bam_file} -outdir ${sample_id}_qmap &&
+    qualimap bamqc -bam ${bam_file} -outfile ${sample_id}.pdf && 
+    mv ${sample_id}*_stats/${sample_id}.pdf .
     """    
 }
 

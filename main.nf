@@ -10,13 +10,13 @@ nextflow.enable.dsl = 2
 
 // include { pipeline_provenance } from './modules/provenance.nf'
 // include { collect_provenance } from './modules/provenance.nf'
-include { fastQC; fastq_check; run_quast} from './modules/qc.nf'
+include { fastQC; fastq_check; run_quast; run_qualimap} from './modules/qc.nf'
 include { merge_databases; cutadapt; fastp; fastp_json_to_csv; run_kraken; kraken_filter } from './modules/prep.nf' 
 include { build_composite_reference; index_composite_reference ; get_reference_headers; dehost_fastq } from './modules/prep.nf'
 include { make_blast_database; run_self_blast; run_blastn; filter_alignments; run_blastx; select_best_reference } from './modules/blast.nf'
 //include { p_make_blast_database; p_run_self_blast; p_run_blastn; p_filter_alignments; p_get_best_references; p_run_blastx } from './modules/p_blast.nf'
 include { assembly } from './modules/assembly.nf'
-include { create_bwa_index; create_fasta_index; map_reads; sort_filter_sam; index_bam } from './modules/mapping.nf'
+include { create_bwa_index; create_fasta_index; map_reads; sort_filter_index_sam; index_bam } from './modules/mapping.nf'
 include { run_freebayes; run_mpileup ; get_common_snps } from './modules/variant_calling.nf'
 include { get_coverage; plot_coverage} from "./modules/coverage.nf"
 include { mask_low_coverage; make_consensus } from './modules/consensus.nf'
@@ -173,34 +173,41 @@ workflow {
 
 		// READ MAPPING, SORTING, FILTERING
 		map_reads(fastp.out.trimmed_reads.join(create_bwa_index.out))
-		sort_filter_sam(map_reads.out)
-		index_bam(sort_filter_sam.out)
+		sort_filter_index_sam(map_reads.out)
 
-		// PLOT COVERAGE
-		get_coverage(sort_filter_sam.out)
-		plot_coverage(get_coverage.out.coverage_file)
+		run_qualimap(sort_filter_index_sam.out)
 
-		// VARIANT CALLING
-		create_fasta_index(select_best_reference.out.ref)
-		run_freebayes(sort_filter_sam.out.join(create_fasta_index.out))
-		run_mpileup(sort_filter_sam.out.join(create_fasta_index.out))
-		get_common_snps(run_freebayes.out.join(run_mpileup.out))
+		// // PLOT COVERAGE
+		// get_coverage(sort_filter_index_sam.out)
+		// plot_coverage(get_coverage.out.coverage_file)
+
+		// // VARIANT CALLING
+		// create_fasta_index(select_best_reference.out.ref)
+		// run_freebayes(sort_filter_index_sam.out.join(create_fasta_index.out))
+		// run_mpileup(sort_filter_index_sam.out.join(create_fasta_index.out))
+		// get_common_snps(run_freebayes.out.join(run_mpileup.out))
 		
-		// CONSENSUS GENERATION 
-		mask_low_coverage(sort_filter_sam.out)
-		make_consensus(get_common_snps.out.join(select_best_reference.out.ref).join(mask_low_coverage.out))
+		// // CONSENSUS GENERATION 
+		// mask_low_coverage(sort_filter_index_sam.out)
+		// make_consensus(get_common_snps.out.join(select_best_reference.out.ref).join(mask_low_coverage.out))
 
-		make_multifasta(make_consensus.out.collect())
-		make_msa(make_multifasta.out)
-		make_tree(make_msa.out)
+		// make_multifasta(make_consensus.out.collect())
+		// make_msa(make_multifasta.out)
+		// make_tree(make_msa.out)
 
 
 		// QualiMap(FluViewer.out.alignment)
 		// parseQMresults(QualiMap.out.genome_results)
 
 		// Collect al the relevant filesfor MULTIQC
-		ch_fastqc_collected = fastQC.out.zip.map{ it -> [it[1], it[2]]}.collect()
-		multiqc(fastp.out.json.map{it -> it[1]}.mix( cutadapt.out.log, run_quast.out.tsv, ch_fastqc_collected ).collect().ifEmpty([]) )
+		ch_multiqc_inputs = Channel.empty()
+		
+		ch_multiqc_inputs.mix(fastQC.out.zip.map{ it -> [it[1], it[2]]}.collect()).set{ch_multiqc_inputs}
+		ch_multiqc_inputs.mix(cutadapt.out.log).set{ch_multiqc_inputs}
+		ch_multiqc_inputs.mix(run_quast.out.tsv).set{ch_multiqc_inputs}
+		ch_multiqc_inputs.mix(fastp.out.json.map{it -> it[1]}).set{ch_multiqc_inputs}
+		ch_multiqc_inputs.mix(run_qualimap.out.main).set{ch_multiqc_inputs}
+		multiqc(ch_multiqc_inputs.collect().ifEmpty([]) )
 		
 		// segcov(FluViewer.out.alignment)
 
