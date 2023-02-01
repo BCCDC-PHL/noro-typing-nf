@@ -4,7 +4,7 @@ process mask_low_coverage {
     publishDir "${params.outdir}/consensus/mask", pattern: "${sample_id}*.bed", mode: 'copy'
     
     input:
-    tuple val(sample_id), path(bamfile)
+    tuple val(sample_id), path(bamfile), path(bam_index)
 	
     output:
     tuple val(sample_id), path("${sample_id}_low_coverage.bed")

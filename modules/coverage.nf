@@ -5,7 +5,7 @@ process get_coverage {
 	publishDir "${params.outdir}/qc_coverage/bed", mode:'copy'
 
 	input:
-	tuple val(sample_id), path(bamfile)
+	tuple val(sample_id), path(bamfile), path(bam_index)
 
 	output:
 	tuple val(sample_id), path("*bed"),emit: coverage_file

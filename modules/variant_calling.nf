@@ -5,7 +5,7 @@ process run_mpileup {
     publishDir "${params.outdir}/vcf/mpileup", pattern: "${sample_id}.mp.vcf.gz" , mode:'copy'
 
     input: 
-    tuple val(sample_id), path(bamfile), path(reference), path(index)
+    tuple val(sample_id), path(bamfile), path(bam_index), path(reference), path(index)
 
     output:
     tuple val(sample_id), path("${sample_id}.mp.vcf.gz")
@@ -24,7 +24,7 @@ process run_freebayes {
     publishDir "${params.outdir}/vcf/freebayes", pattern: "${sample_id}.fb.vcf.gz", mode: 'copy'
 
     input: 
-	tuple val(sample_id), path(bamfile), path(reference), path(index)
+	tuple val(sample_id), path(bamfile), path(bam_index), path(reference), path(index)
 	
 	output:
     tuple val(sample_id), path("${sample_id}.fb.vcf.gz")
