@@ -20,11 +20,18 @@ def get_parser():
 	return parser
 
 def parse_blast(filepath):
-	cols = 'qseqid sseqid pident qlen slen bitscore rawscore'.split(' ')
+	cols = 'qseqid sseqid pident qlen slen length bitscore rawscore'.split(' ')
 	blast_df = pd.read_csv(filepath, sep='\t', names=cols)
 
+	# split the header into genotype and strain columns 
 	blast_df[['genotype','strain']] = blast_df['sseqid'].str.split("|",expand=True)[[1,2]]
-	blast_df['coverage'] = blast_df['qlen'] * 100 / blast_df['slen']
+
+	# compute the coverage column
+	blast_df['coverage'] = blast_df['length'] * 100 / blast_df['slen']
+
+	# add name column to the blast results 
+	sample_name = os.path.basename(filepath).split("_")[0]
+	blast_df.insert(0, 'sample_name', sample_name)
 
 	return blast_df
 
