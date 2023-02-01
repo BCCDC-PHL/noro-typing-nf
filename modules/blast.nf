@@ -61,7 +61,7 @@ process run_blastn {
     script:
     workflow_type = "${blast_db}" =~ /gtype/ ? "gtype" : "ptype" 
     """
-    blastn -query ${contig_file} -db ${blast_db} -outfmt "6 qseqid sseqid pident qlen slen bitscore score" > ${sample_id}_${workflow_type}_blastn.tsv
+    blastn -query ${contig_file} -db ${blast_db} -outfmt "6 qseqid sseqid pident qlen slen length bitscore score" > ${sample_id}_${workflow_type}_blastn.tsv
     """
 }
 
@@ -80,9 +80,9 @@ process filter_alignments {
     tuple val(sample_id), path(blast_results), path(reference_fasta), path(self_blast_scores)
 
     output:
-    tuple val(sample_id), path("${sample_id}*filter.tsv"), emit: blast
-    tuple val(sample_id), path("${sample_id}*fasta"), emit: ref
-
+    tuple val(sample_id), path("${sample_id}*filter.tsv"), path("${sample_id}*fasta"), emit: main
+    tuple val(sample_id), path("${sample_id}*full.tsv"), emit: full
+    path("${sample_id}*filter.tsv"), emit: filter
 
     script:
     contig_mode = params.assemble ? "--contig_mode" : "" 
@@ -94,8 +94,8 @@ process filter_alignments {
     --seqs ${reference_fasta} \
     --ref_scores ${self_blast_scores} \
     --min_id ${params.min_blast_id} \
-    --tsv_out ${sample_id}_blastn_${workflow_type}_filter.tsv \
-    --fasta_out ${sample_id}_ref.fasta 
+    --tsv_out ${sample_id}_${workflow_type}_blastn_filter.tsv \
+    --fasta_out ${sample_id}_${workflow_type}_ref.fasta 
     """
 
 }
@@ -122,6 +122,32 @@ process get_best_references {
     """
 }
 
+process select_best_reference {
+    
+    tag {sample_id}
+
+    publishDir "${params.outdir}/blastn/final/", pattern: "${sample_id}*fasta" , mode:'copy'
+
+    input:
+    tuple val(sample_id), path(gtype_blast), path(gtype_ref), path(ptype_blast), path(ptype_ref)
+
+    output:
+    tuple val(sample_id), path("${sample_id}.ref.final.fasta"), emit: ref
+    path("${sample_id}*final.tsv"), emit: blast
+
+    script: 
+    """
+    select_best_reference.py --gblast ${gtype_blast} --pblast ${ptype_blast} > result.txt
+    if [ \$(cat result.txt) == "gtype" ]; then
+        cp ${gtype_ref} ${sample_id}.ref.final.fasta
+        cp ${gtype_blast} ${sample_id}.blast.final.tsv
+    else
+        cp ${ptype_ref} ${sample_id}.ref.final.fasta
+        cp ${ptype_blast} ${sample_id}.blast.final.tsv
+    fi   
+    """
+}
+
 process run_blastx {
 
     tag {sample_id}
@@ -138,6 +164,6 @@ process run_blastx {
     script:
     workflow_type = "${diamond_db}" =~ /gtype/ ? "gtype" : "ptype" 
     """
-    diamond blastx --threads ${task.cpus} -d ${diamond_db} -q ${contig_file} -o ${sample_id}_blastx.tsv --outfmt "6 qseqid sseqid pident qlen slen bitscore score"
+    diamond blastx --threads ${task.cpus} -d ${diamond_db} -q ${contig_file} -o ${sample_id}_blastx.tsv --outfmt "6 qseqid sseqid pident qlen slen length bitscore score"
     """
 }
