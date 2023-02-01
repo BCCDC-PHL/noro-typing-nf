@@ -13,7 +13,7 @@ nextflow.enable.dsl = 2
 include { fastQC; fastq_check; run_quast} from './modules/qc.nf'
 include { merge_databases; cutadapt; fastp; fastp_json_to_csv; run_kraken; kraken_filter } from './modules/prep.nf' 
 include { build_composite_reference; index_composite_reference ; get_reference_headers; dehost_fastq } from './modules/prep.nf'
-include { make_blast_database; run_self_blast; run_blastn; filter_alignments; get_best_references; run_blastx } from './modules/blast.nf'
+include { make_blast_database; run_self_blast; run_blastn; filter_alignments; run_blastx; select_best_reference } from './modules/blast.nf'
 //include { p_make_blast_database; p_run_self_blast; p_run_blastn; p_filter_alignments; p_get_best_references; p_run_blastx } from './modules/p_blast.nf'
 include { assembly } from './modules/assembly.nf'
 include { create_bwa_index; create_fasta_index; map_reads; sort_filter_sam; index_bam } from './modules/mapping.nf'
@@ -78,8 +78,8 @@ workflow genotyping {
 
 		//get_best_references(ch_gtype_refs)
 	emit:
-		blast = filter_alignments.out.blast
-		refs = filter_alignments.out.ref
+		main = filter_alignments.out.main
+		filter = filter_alignments.out.filter
 }
 
 workflow ptyping {
@@ -103,8 +103,8 @@ workflow ptyping {
 		
 		//get_best_references(filter_alignments.out)
 	emit:
-		blast = filter_alignments.out.blast
-		refs = filter_alignments.out.ref
+		main = filter_alignments.out.main
+		filter = filter_alignments.out.filter
 }
 
 workflow {
@@ -156,12 +156,20 @@ workflow {
 		assembly(dehost_fastq.out.fastq)
 		run_quast(assembly.out.map{ it -> it[1]}.collect())
 
-		genotyping( assembly.out, ch_blastdb_gtype_fasta)
+		// GENOTYPING / PTYPING 
+		genotyping(assembly.out, ch_blastdb_gtype_fasta)
 		ptyping(assembly.out, ch_blastdb_ptype_fasta)
 
-		create_bwa_index(genotyping.out.refs)
+		// Collect typing results 
+		genotyping.out.filter.collectFile(name: "${params.outdir}/blastn/final/gtypes.tsv", keepHeader: true, skip: 1)
+		ptyping.out.filter.collectFile(name: "${params.outdir}/blastn/final/ptypes.tsv", keepHeader: true, skip: 1)
 
+		// Pick best reference out of G & P type candidates
+		select_best_reference(genotyping.out.main.join(ptyping.out.main))
+
+		select_best_reference.out.blast.collect().collectFile(name: "${params.outdir}/blastn/final/final_types.tsv", keepHeader: true, skip: 1).set{ch_types}
 		
+		create_bwa_index(select_best_reference.out.ref)
 
 		// READ MAPPING, SORTING, FILTERING
 		map_reads(fastp.out.trimmed_reads.join(create_bwa_index.out))
@@ -173,14 +181,14 @@ workflow {
 		plot_coverage(get_coverage.out.coverage_file)
 
 		// VARIANT CALLING
-		create_fasta_index(genotyping.out.refs)
+		create_fasta_index(select_best_reference.out.ref)
 		run_freebayes(sort_filter_sam.out.join(create_fasta_index.out))
 		run_mpileup(sort_filter_sam.out.join(create_fasta_index.out))
 		get_common_snps(run_freebayes.out.join(run_mpileup.out))
 		
 		// CONSENSUS GENERATION 
 		mask_low_coverage(sort_filter_sam.out)
-		make_consensus(get_common_snps.out.join(genotyping.out.refs).join(mask_low_coverage.out))
+		make_consensus(get_common_snps.out.join(select_best_reference.out.ref).join(mask_low_coverage.out))
 
 		make_multifasta(make_consensus.out.collect())
 		make_msa(make_multifasta.out)
@@ -191,8 +199,8 @@ workflow {
 		// parseQMresults(QualiMap.out.genome_results)
 
 		// Collect al the relevant filesfor MULTIQC
-		// ch_fastqc_collected = fastQC.out.zip.map{ it -> [it[1], it[2]]}.collect()
-		// multiqc(fastp.out.json.mix( cutadapt.out.log, ch_fastqc_collected ).collect().ifEmpty([]) )
+		ch_fastqc_collected = fastQC.out.zip.map{ it -> [it[1], it[2]]}.collect()
+		multiqc(fastp.out.json.map{it -> it[1]}.mix( cutadapt.out.log, run_quast.out.tsv, ch_fastqc_collected ).collect().ifEmpty([]) )
 		
 		// segcov(FluViewer.out.alignment)
 
