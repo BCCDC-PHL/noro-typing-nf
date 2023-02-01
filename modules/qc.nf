@@ -2,15 +2,15 @@ process fastQC {
 
     tag { sample_id }
 
-    publishDir path: "${params.outdir}/fastQC/data", pattern: "${sample_id}_R{1,2}*fastqc.zip", mode: "copy"
-    publishDir path: "${params.outdir}/fastQC/", pattern: "${sample_id}_R{1,2}*fastqc.html", mode: "copy"
+    publishDir path: "${params.outdir}/qc/fastQC/data", pattern: "${sample_id}_R{1,2}*fastqc.zip", mode: "copy"
+    publishDir path: "${params.outdir}/qc/fastQC/", pattern: "${sample_id}_R{1,2}*fastqc.html", mode: "copy"
 
     input:
     tuple val(sample_id), path(forward), path(reverse)
 
     output:
     tuple val(sample_id), path("${sample_id}_R{1,2}*_fastqc.html"), emit: html
-    tuple val(sample_id), path("${sample_id}_R{1,2}*_fastqc.zip"), emit: zip
+    tuple val(sample_id), path("${sample_id}_R1*fastqc.zip"), path("${sample_id}_R2*fastqc.zip"), emit: zip
     tuple val(sample_id), path("${sample_id}_fastqc_provenance.yml"), emit: provenance
 
     script:
@@ -28,7 +28,7 @@ process fastq_check {
     conda "${projectDir}/environments/fastx.yaml"
 
     //publishDir path: "${params.outdir}/fastq_qual/", pattern: "${sample_id}.fqqual.tsv", mode: "copy"
-    publishDir path: "${params.outdir}/fastq_qual/", pattern: "${sample_id}.R{1,2}.raw.tsv", mode: "copy"
+    publishDir path: "${params.outdir}/qc/fastx/", pattern: "${sample_id}.R{1,2}.raw.tsv", mode: "copy"
 
     input: 
     tuple val(sample_id), path(forward), path(reverse)
@@ -49,7 +49,7 @@ process mapping_check {
     tag { sample_id }
     
     //publishDir path: "${params.outdir}/mapping_qual/", pattern: "${bam.simpleName}.mapqual.tsv",mode: "copy"
-    publishDir path: "${params.outdir}/mapping_qual/", pattern: "${bam.simpleName}.raw.tsv", mode: "copy"
+    publishDir path: "${params.outdir}/qc/mapping/", pattern: "${bam.simpleName}.raw.tsv", mode: "copy"
 
     input: 
 	tuple val(sample_id), path(bam)
@@ -64,11 +64,29 @@ process mapping_check {
     """
 }
 
+process run_qualimap {
+    publishDir path: "${params.outdir}/qc/mapping/pdf", pattern: "${sample_id}*pdf", mode: "copy"
+    publishDir path: "${params.outdir}/qc/mapping/", pattern: "${sample_id}/", mode: "copy"
+
+    input:
+    tuple val(sample_id), path(bam_file)
+
+    output:
+    path("${sample_id}/"), emit: html
+    path("${sample_id}*_stats/${sample_id}.pdf"), emit: pdf
+
+    script:
+    """
+    qualimap bamqc -bam ${bam_file} -outdir ${sample_id} &&
+    qualimap bamqc -bam ${bam_file} -outfile ${sample_id}.pdf
+    """    
+}
+
 
 process run_quast {
 
-    publishDir path: "${params.outdir}/quast/plots", pattern: "quast_results/basic_stats/*pdf", mode: "copy"
-    publishDir path: "${params.outdir}/quast/reports", pattern: "quast_results/basic_stats/*pdf", mode: "copy"
+    publishDir path: "${params.outdir}/qc/assembly/plots", pattern: "quast_results/basic_stats/*pdf", mode: "copy"
+    publishDir path: "${params.outdir}/qc/assembly/reports", pattern: "quast_results/*{pdf,html,tsv,log}", mode: "copy"
 
 
     input:
@@ -76,8 +94,8 @@ process run_quast {
 
     output:
     path("quast_results/basic_stats/*pdf"), emit: plots
-    path("quast_results/transposed_report.tsv"), emit: flatfile
-    path("quast_results/report.pdf"), emit: report
+    path("quast_results/report.tsv"), emit: tsv
+    path("quast_results/report.pdf"), emit: pdf
 
     script:
     """
@@ -88,8 +106,8 @@ process run_quast {
 process run_mapping_qc {
     tag { sample_id }
 
-    publishDir "${params.outdir}/qc_mapping/plots", pattern: "${sample_id}.depth.png", mode: 'copy'
-    publishDir "${params.outdir}/qc_mapping/raw", pattern: "${sample_id}*csv", mode: 'copy'
+    publishDir "${params.outdir}/qc/full/plots", pattern: "${sample_id}.depth.png", mode: 'copy'
+    publishDir "${params.outdir}/qc/full/raw", pattern: "${sample_id}*csv", mode: 'copy'
 
     input:
     tuple sample_id, path(bam), path(bam_index), path(consensus), path(ref)

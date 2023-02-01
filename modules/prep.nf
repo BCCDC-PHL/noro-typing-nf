@@ -18,8 +18,8 @@ process fastp {
 
     tag { sample_id }
 
-    publishDir "${params.outdir}/fastp", pattern: "${sample_id}*_R{1,2}.trim.fastq.gz" , mode:'copy'
-    publishDir "${params.outdir}/fastp/html", pattern: "${sample_id}*html" , mode:'copy'
+    publishDir "${params.outdir}/preprocess/fastp", pattern: "${sample_id}*_R{1,2}.trim.fastq.gz" , mode:'copy'
+    publishDir "${params.outdir}/preprocess/fastp/html", pattern: "${sample_id}*html" , mode:'copy'
 
     input:
     tuple val(sample_id), path(fastq1), path(fastq2)
@@ -36,7 +36,6 @@ process fastp {
     printf -- "  tool_name: fastp\\n  tool_version: \$(fastp --version 2>&1 | cut -d ' ' -f 2)\\n" >> ${sample_id}_fastp_provenance.yml
     fastp \
       -t ${task.cpus} \
-      --umi --umi_loc=read1 --umi_len=8 \
       -i ${fastq1} \
       -I ${fastq2} \
       -o ${sample_id}_R1.trim.fastq.gz \
@@ -50,7 +49,7 @@ process fastp {
 process fastp_json_to_csv {
     tag { sample_id }
 
-    publishDir path: "${params.outdir}/fastp/csv", pattern: "${sample_id}*csv", mode: "copy"
+    publishDir path: "${params.outdir}/preprocess/fastp/csv", pattern: "${sample_id}*csv", mode: "copy"
 
     input: 
     tuple val(sample_id), path(fastp_json)
@@ -67,8 +66,8 @@ process cutadapt {
 
     tag { sample_id }
 
-    publishDir "${params.outdir}/cutadapt", pattern: "${sample_id}_R{1,2}.trimmed.fastq.gz", mode:'copy'
-    publishDir "${params.outdir}/cutadapt", pattern: "*cutadapt.log", mode:'copy'
+    publishDir "${params.outdir}/preprocess/cutadapt", pattern: "${sample_id}_R{1,2}.trimmed.fastq.gz", mode:'copy'
+    publishDir "${params.outdir}/preprocess/cutadapt/logs", pattern: "*cutadapt.log", mode:'copy'
 
     input:
     tuple val(sample_id), path(reads_1), path(reads_2)
@@ -102,8 +101,8 @@ process run_kraken {
 
     conda "${projectDir}/environments/kraken.yaml"
 
-    publishDir path: "${params.outdir}/kraken/reports", pattern: "${sample_id}.kraken.report", mode: "copy"
-    publishDir path: "${params.outdir}/kraken/output", pattern: "${sample_id}.kraken.out", mode: "copy"
+    publishDir path: "${params.outdir}/filtering/kraken/reports", pattern: "${sample_id}.kraken.report", mode: "copy"
+    publishDir path: "${params.outdir}/filtering/kraken/output", pattern: "${sample_id}.kraken.out", mode: "copy"
 
 
     input: 
@@ -126,7 +125,7 @@ process kraken_filter {
 
     conda "${projectDir}/environments/kraken.yaml"
 
-    publishDir path: "${params.outdir}/kraken/filtered", pattern: "${sample_id}*fastq.gz", mode: "copy"
+    publishDir path: "${params.outdir}/filtering/kraken/filtered", pattern: "${sample_id}*fastq.gz", mode: "copy"
 
     input:
     tuple val(sample_id), path(reads_1), path(reads_2), path(kraken_report), path(kraken_out)
