@@ -128,3 +128,23 @@ process run_mapping_qc {
     qc.py ${qcSetting} --outfile ${sample_id}.qc.csv --sample ${sample_id} --ref ${ref} --bam ${bam} --consensus ${consensus}
     """
 }
+
+process run_custom_qc {
+    tag { sample_id }
+
+    publishDir "${params.outdir}/qc/custom/csv", pattern: "${sample_id}*csv", mode: 'copy'
+    publishDir "${params.outdir}/qc/custom/plots", pattern: "${sample_id}*png", mode: 'copy'
+
+    input:
+    tuple val(sample_id), path(bam), path(bam_index), path(ref), path(consensus)
+
+    output:
+    path "${sample_id}.qc.csv", emit: csv
+    path "${sample_id}*.png", emit: plot
+
+    script:
+
+    """
+    qc.py --outfile ${sample_id}.qc.csv --sample ${sample_id} --ref ${ref} --bam ${bam} --consensus ${consensus}
+    """
+}
