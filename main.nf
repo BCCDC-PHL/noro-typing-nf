@@ -10,7 +10,7 @@ nextflow.enable.dsl = 2
 
 // include { pipeline_provenance } from './modules/provenance.nf'
 // include { collect_provenance } from './modules/provenance.nf'
-include { fastQC; fastq_check; run_quast; run_qualimap} from './modules/qc.nf'
+include { fastQC; fastq_check; run_quast; run_qualimap; run_custom_qc} from './modules/qc.nf'
 include { merge_databases; cutadapt; fastp; fastp_json_to_csv; run_kraken; kraken_filter } from './modules/prep.nf' 
 include { build_composite_reference; index_composite_reference ; get_reference_headers; dehost_fastq } from './modules/prep.nf'
 include { make_blast_database; run_self_blast; run_blastn; filter_alignments; run_blastx; select_best_reference } from './modules/blast.nf'
@@ -177,39 +177,35 @@ workflow {
 
 		run_qualimap(sort_filter_index_sam.out)
 
-		// // PLOT COVERAGE
-		// get_coverage(sort_filter_index_sam.out)
-		// plot_coverage(get_coverage.out.coverage_file)
+		// PLOT COVERAGE
+		get_coverage(sort_filter_index_sam.out)
+		plot_coverage(get_coverage.out.coverage_file)
 
-		// // VARIANT CALLING
-		// create_fasta_index(select_best_reference.out.ref)
-		// run_freebayes(sort_filter_index_sam.out.join(create_fasta_index.out))
-		// run_mpileup(sort_filter_index_sam.out.join(create_fasta_index.out))
-		// get_common_snps(run_freebayes.out.join(run_mpileup.out))
+		// VARIANT CALLING
+		create_fasta_index(select_best_reference.out.ref)
+		run_freebayes(sort_filter_index_sam.out.join(create_fasta_index.out))
+		run_mpileup(sort_filter_index_sam.out.join(create_fasta_index.out))
+		get_common_snps(run_freebayes.out.join(run_mpileup.out))
 		
-		// // CONSENSUS GENERATION 
-		// mask_low_coverage(sort_filter_index_sam.out)
-		// make_consensus(get_common_snps.out.join(select_best_reference.out.ref).join(mask_low_coverage.out))
+		// CONSENSUS GENERATION 
+		mask_low_coverage(sort_filter_index_sam.out)
+		make_consensus(get_common_snps.out.join(select_best_reference.out.ref).join(mask_low_coverage.out))
 
-		// make_multifasta(make_consensus.out.collect())
-		// make_msa(make_multifasta.out)
-		// make_tree(make_msa.out)
+		run_custom_qc(sort_filter_index_sam.out.join(select_best_reference.out.ref).join(make_consensus.out))
+		run_custom_qc.out.csv.collectFile(name: "${params.outdir}/qc/custom/qc_all.csv", keepHeader: true, skip: 1)
 
+		make_multifasta(make_consensus.out.map{it -> it[1]}.collect())
+		make_msa(make_multifasta.out)
+		make_tree(make_msa.out)
 
-		// QualiMap(FluViewer.out.alignment)
-		// parseQMresults(QualiMap.out.genome_results)
-
-		// Collect al the relevant filesfor MULTIQC
+		// Collect al the relevant files for MULTIQC
 		ch_multiqc_inputs = Channel.empty()
-		
 		ch_multiqc_inputs.mix(fastQC.out.zip.map{ it -> [it[1], it[2]]}.collect()).set{ch_multiqc_inputs}
 		ch_multiqc_inputs.mix(cutadapt.out.log).set{ch_multiqc_inputs}
 		ch_multiqc_inputs.mix(run_quast.out.tsv).set{ch_multiqc_inputs}
 		ch_multiqc_inputs.mix(fastp.out.json.map{it -> it[1]}).set{ch_multiqc_inputs}
 		ch_multiqc_inputs.mix(run_qualimap.out.main).set{ch_multiqc_inputs}
 		multiqc(ch_multiqc_inputs.collect().ifEmpty([]) )
-		
-		// segcov(FluViewer.out.alignment)
 
 		// ch_provenance = FluViewer.out.provenance
 		// ch_provenance = ch_provenance.join(hash_files.out.provenance).map{ it -> [it[0], [it[1]] << it[2]] }
