@@ -6,6 +6,7 @@ import subprocess
 import pandas as pd
 import matplotlib.pyplot as plt
 import shlex
+import numpy as np
 
 """
 This script can incorporate as many QC checks as required
@@ -85,6 +86,19 @@ def get_ref_length(ref):
     record = SeqIO.read(ref, "fasta")
     return len(record.seq)
 
+def get_depth_quantiles(pos_depth):
+    _ , _ , depths = zip(*pos_depth)
+    depths = [int(x) for x in depths]
+    depths = np.array(depths)
+
+    quantiles = [
+        np.min(depths),
+        *np.quantile(depths, [0.025, 0.1, 0.25, 0.50, 0.975]).tolist(),
+        np.max(depths),
+        np.mean(depths)
+    ]
+
+    return quantiles
 
 def sliding_window_N_density(sequence, window=10):
 
@@ -137,14 +151,23 @@ def go(args):
         if largest_N_gap >= 10000 or pct_N_bases < 50.0:
                 qc_pass = "TRUE"
 
+    quantiles = get_depth_quantiles(depth_pos)
 
-    qc_line = { 'sample_name' : args.sample,
+    qc_line = { 'sample_name' : args.sample_name,
+                'depth_min'    : "{:.2f}".format(quantiles[0]),
+                'depth_025'    : "{:.2f}".format(quantiles[1]),
+                'depth_10'    : "{:.2f}".format(quantiles[2]),
+                'depth_25'    : "{:.2f}".format(quantiles[3]),
+                'depth_50'    : "{:.2f}".format(quantiles[4]),
+                'depth_975'    : "{:.2f}".format(quantiles[5]),
+                'depth_max'    : "{:.2f}".format(quantiles[6]),
+                'depth_mean'   : "{:.2f}".format(quantiles[7]),
                 'pct_N_bases' : "{:.2f}".format(pct_N_bases),
           'pct_covered_bases' : "{:.2f}".format(pct_covered_bases), 
            'longest_no_N_run' : largest_N_gap,
           'num_aligned_reads' : num_reads,
-                       'fasta': args.consensus, 
-                        'bam' : args.bam,
+                    #    'fasta': args.consensus, 
+                    #     'bam' : args.bam,
                     'qc_pass' : qc_pass}
 
 
@@ -155,18 +178,17 @@ def go(args):
         writer.writerow(qc_line)
 
     N_density = sliding_window_N_density(fasta)
-    make_qc_plot(depth_pos, N_density, args.sample)
+    make_qc_plot(depth_pos, N_density, args.sample_name)
 
 def main():
     import argparse
 
     parser = argparse.ArgumentParser()
-    group = parser.add_mutually_exclusive_group(required=True)
-    parser.add_argument('--outfile', required=True)
-    parser.add_argument('--sample', required=True)
-    parser.add_argument('--ref', required=True)
-    parser.add_argument('--bam', required=True)
-    parser.add_argument('--consensus', required=True)
+    parser.add_argument('-o', '--outfile', required=True)
+    parser.add_argument('-s', '--sample_name', required=True)
+    parser.add_argument('-r', '--ref', required=True)
+    parser.add_argument('-b', '--bam', required=True)
+    parser.add_argument('-c', '--consensus', required=True)
 
     args = parser.parse_args()
     go(args)
