@@ -84,7 +84,7 @@ process cutadapt {
     cutadapt \
       -j ${task.cpus} \
       -g file:${params.primers} \
-      -G file:${params.primers} \
+      -G file:${params.primers_rev} \
       -o ${sample_id}_R1.trimmed.fastq.gz \
       -p ${sample_id}_R2.trimmed.fastq.gz \
       ${reads_1} \
