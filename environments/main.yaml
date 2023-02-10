@@ -109,7 +109,7 @@ dependencies:
   - openjdk=17.0.3=hafdced1_4
   - openjpeg=2.5.0=h7d73246_1
   - openmp=8.0.1=0
-  - openssl=1.1.1s=h0b41bf4_1
+  - openssl=1.1.1t=h0b41bf4_0
   - ossuuid=1.6.2=hf484d3e_1000
   - packaging=22.0=pyhd8ed1ab_0
   - pandas=1.5.2=py310h769672d_0
@@ -206,6 +206,7 @@ dependencies:
   - python-isal=1.1.0=py310h5764c6d_1
   - python_abi=3.10=3_cp310
   - pytz=2022.6=pyhd8ed1ab_0
+  - pyyaml=6.0=py310h5764c6d_5
   - quast=5.2.0=py310pl5321hc8f18ef_2
   - readline=8.1.2=h0f457ee_0
   - samtools=1.16.1=h6899075_1
@@ -241,6 +242,7 @@ dependencies:
   - xorg-xextproto=7.3.0=h7f98852_1002
   - xorg-xproto=7.0.31=h7f98852_1007
   - xz=5.2.6=h166bdaf_0
+  - yaml=0.2.5=h7f98852_2
   - zlib=1.2.13=h166bdaf_4
   - zstandard=0.19.0=py310hdeb6495_1
   - zstd=1.5.2=h6239696_4
