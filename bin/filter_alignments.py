@@ -4,7 +4,7 @@ import os
 import sys
 import pandas as pd 
 import argparse
-
+from tools import parse_fasta, write_fasta
 def get_parser():
 	parser = argparse.ArgumentParser()
 	parser.add_argument('blastn', help='BlastN results file in TSV format')
@@ -20,54 +20,27 @@ def get_parser():
 	return parser
 
 def parse_blast(filepath):
-	cols = 'qseqid sseqid pident qlen slen length bitscore rawscore'.split(' ')
+	cols = 'qseqid sseqid pident qlen slen nident bitscore rawscore'.split(' ')
 	blast_df = pd.read_csv(filepath, sep='\t', names=cols)
-
 	# split the header into genotype and strain columns 
 	blast_df[['genotype','strain']] = blast_df['sseqid'].str.split("|",expand=True)[[1,2]]
-
 	# compute the coverage column
-	blast_df['coverage'] = blast_df['length'] * 100 / blast_df['slen']
-
+	# blast_df['coverage'] = blast_df['length'] * 100 / blast_df['slen']
+	blast_df['prop_match'] = blast_df['nident'] * 100 / blast_df['slen']
 	# add name column to the blast results 
 	sample_name = os.path.basename(filepath).split("_")[0]
 	blast_df.insert(0, 'sample_name', sample_name)
-
 	return blast_df
 
 
 def add_blast_score_ratio(blast_df, ref_score_path):
 	ref_scores = pd.read_csv(ref_score_path, sep='\t')
-
 	colnames = ref_scores.columns
 	blast_df = blast_df.merge(ref_scores, left_on='sseqid', right_on=colnames[0]).drop(colnames[0],axis=1)
-
 	blast_df['bsr'] = blast_df['rawscore'] * 100 / blast_df[colnames[1]]
-
 	return blast_df
 
-def parse_fasta(filepath):	
-	seqs = {}
-	with open(filepath, 'r') as handle:
-		for line in handle.readlines():
-			if line[0] == '>':
-				header = line.strip().lstrip('>')
-				seqs[header] = ''
-			else:
-				seqs[header] += line.strip()
-	return seqs	
 
-def write_fasta(seqs, outpath):
-	try: 
-		with open(outpath, 'w') as outfile:
-
-			for header, seq in seqs.items():
-				outfile.write(">" + header + '\n')
-				outfile.write(seq + '\n')
-	except Exception as e:
-		print(str(e))
-		return False
-	return True
 
 #%%
 def filter_alignments(blast_results, score_column, min_cov, min_id):
@@ -75,35 +48,40 @@ def filter_alignments(blast_results, score_column, min_cov, min_id):
 	print('Filtering alignments...')
 	# Annotate alignments with segment and subtype
 	# blast_results['segment'] = blast_results.apply(lambda row: row['sseqid'].split('|')[2], axis=1)
+	try: 
+		# Discard alignments below minimum identity threshold
+		# blast_results = blast_results[blast_results['pident']>=min_id]
+		
+		blast_results = blast_results.loc[blast_results['prop_match'] > 40]
+		# Keep only best alignment for each contig (by choice of scoring metric, i.e. bitscore or score)
 
-	# Discard alignments below minimum identity threshold
-	blast_results = blast_results[blast_results['pident']>=min_id]
-	# Keep only best alignment for each contig (by choice of scoring metric, i.e. bitscore or score)
+		blast_results = blast_results.drop_duplicates()
+		best_scores = blast_results[['qseqid', score_column]].groupby('qseqid')[score_column].nlargest(5).reset_index()[['qseqid',score_column]]
+		# blast_results = blast_results.nlargest(5, score_column)
+		blast_results = pd.merge(blast_results, best_scores, on=['qseqid', score_column])
+		blast_results = blast_results.sort_values(['qseqid', score_column],axis=0)
 
-	best_scores = blast_results[['qseqid', score_column]].groupby('qseqid')[score_column].nlargest(3).reset_index()[['qseqid',score_column]]
-	# blast_results = blast_results.nlargest(5, score_column)
-	blast_results = pd.merge(blast_results, best_scores, on=['qseqid', score_column])
-	blast_results = blast_results.sort_values('qseqid',axis=0)
+		verbose_results = blast_results.copy()
 
-	verbose_results = blast_results.copy()
+		# ensure that final results only have a single genotype
+		# subtype_counts = blast_results[['qseqid', 'genotype']].drop_duplicates()
+		# subtype_counts = subtype_counts.groupby('qseqid').size().reset_index()
+		# subtype_counts = subtype_counts[subtype_counts[0]==1][['qseqid']]
+		# blast_results = pd.merge(blast_results, subtype_counts, on='qseqid')
+		# Keep only alignments between contigs and ref seqs with median segment length
+		# median_slen = blast_results[['qseqid', 'slen']].groupby('qseqid').quantile(0.5, interpolation='higher').reset_index()
+		# blast_results = pd.merge(blast_results, median_slen, on=['qseqid', 'slen'])
+		# Discard contigs that do not provide minimum coverage of a segment
+		# Calculates the percent covered by the query relative to the subject
+		
+		blast_results = blast_results.loc[[blast_results[score_column].idxmax()]]
+		# De-duplicate sheet 
+		
 
-	best_coverages = blast_results[['qseqid', 'coverage']].groupby('qseqid').max().reset_index()
-	blast_results = pd.merge(blast_results, best_coverages, on=['qseqid', 'coverage'])
+	except Exception as e:
+		print(str(e))
+		print("ERROR: Encountered an error while filtering BLAST results")
 
-	# ensure that final results only have a single genotype
-	# subtype_counts = blast_results[['qseqid', 'genotype']].drop_duplicates()
-	# subtype_counts = subtype_counts.groupby('qseqid').size().reset_index()
-	# subtype_counts = subtype_counts[subtype_counts[0]==1][['qseqid']]
-	# blast_results = pd.merge(blast_results, subtype_counts, on='qseqid')
-	# Keep only alignments between contigs and ref seqs with median segment length
-	# median_slen = blast_results[['qseqid', 'slen']].groupby('qseqid').quantile(0.5, interpolation='higher').reset_index()
-	# blast_results = pd.merge(blast_results, median_slen, on=['qseqid', 'slen'])
-	# Discard contigs that do not provide minimum coverage of a segment
-	# Calculates the percent covered by the query relative to the subject
-	
-	blast_results = blast_results.loc[[blast_results[score_column].idxmax()]]
-	# De-duplicate sheet 
-	blast_results = blast_results.drop_duplicates()
 
 	return blast_results, verbose_results
 
