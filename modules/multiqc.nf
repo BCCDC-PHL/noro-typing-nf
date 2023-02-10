@@ -12,7 +12,7 @@ process multiqc {
 
     script:
     """
-    multiqc . -n ${params.run_name}_multiqc_report.html
+    multiqc . --config ${params.multiqc_config} --filename ${params.run_name}_multiqc_report.html
     
     """
 }
