@@ -14,14 +14,13 @@ process make_blast_database {
     path(fasta)
 
     output:
-    tuple path("${db_name}"), path("${db_name}.*")
+    tuple path("${fasta}"), path("${fasta}.*")
 
     script:
     db_name = "${fasta.simpleName}"
     workflow_type = "${fasta}" =~ /gtype/ ? "gtype" : "ptype" 
     """
-    makeblastdb -dbtype nucl -in ${fasta} -out ${db_name}
-    cp -P ${fasta} ${db_name}
+    makeblastdb -dbtype nucl -in ${fasta} -out ${fasta}
     """
 }
 
@@ -61,7 +60,7 @@ process run_blastn {
     script:
     workflow_type = "${blast_db}" =~ /gtype/ ? "gtype" : "ptype" 
     """
-    blastn -query ${contig_file} -db ${blast_db} -outfmt "6 qseqid sseqid pident qlen slen length bitscore score" > ${sample_id}_${workflow_type}_blastn.tsv
+    blastn -num_threads ${task.cpus} -query ${contig_file} -db ${blast_db} -outfmt "6 ${params.blast_outfmt}" > ${sample_id}_${workflow_type}_blastn.tsv
     """
 }
 
@@ -83,6 +82,8 @@ process filter_alignments {
     tuple val(sample_id), path("${sample_id}*filter.tsv"), path("${sample_id}*fasta"), emit: main
     tuple val(sample_id), path("${sample_id}*full.tsv"), emit: full
     path("${sample_id}*filter.tsv"), emit: filter
+    tuple val(sample_id), path("${sample_id}*fasta"), emit: ref
+
 
     script:
     contig_mode = params.assemble ? "--contig_mode" : "" 
@@ -137,14 +138,13 @@ process select_best_reference {
 
     script: 
     """
-    select_best_reference.py --gblast ${gtype_blast} --pblast ${ptype_blast} > result.txt
-    if [ \$(cat result.txt) == "gtype" ]; then
-        cp ${gtype_ref} ${sample_id}.ref.final.fasta
-        cp ${gtype_blast} ${sample_id}.blast.final.tsv
-    else
-        cp ${ptype_ref} ${sample_id}.ref.final.fasta
-        cp ${ptype_blast} ${sample_id}.blast.final.tsv
-    fi   
+    select_best_reference.py \
+    -g ${gtype_blast} \
+    -p ${ptype_blast} \
+    -G ${gtype_ref} \
+    -P ${ptype_ref} \
+    --outfasta ${sample_id}.ref.final.fasta \
+    --outblast ${sample_id}.blast.final.tsv
     """
 }
 
