@@ -20,7 +20,7 @@ include { create_bwa_index; create_fasta_index; map_reads; sort_filter_index_sam
 include { run_freebayes; run_mpileup ; get_common_snps } from './modules/variant_calling.nf'
 include { get_coverage; plot_coverage} from "./modules/coverage.nf"
 include { mask_low_coverage; make_consensus } from './modules/consensus.nf'
-include { make_multifasta; make_msa; make_tree } from './modules/phylo.nf'
+include { make_multifasta; make_msa; make_tree; extract_genes_samples; extract_genes_refs} from './modules/phylo.nf'
 include { multiqc } from './modules/multiqc.nf'
 
 println "HELLO. STARTING NOROVIRUS METAGENOMICS PIPELINE."
@@ -80,6 +80,8 @@ workflow genotyping {
 	emit:
 		main = filter_alignments.out.main
 		filter = filter_alignments.out.filter
+		ref = filter_alignments.out.ref
+
 }
 
 workflow ptyping {
@@ -105,6 +107,41 @@ workflow ptyping {
 	emit:
 		main = filter_alignments.out.main
 		filter = filter_alignments.out.filter
+		ref = filter_alignments.out.ref
+}
+
+workflow create_gtree {
+	take:
+		ch_consensus_genes
+		ch_database_fasta
+
+	main:
+		extract_genes_refs(ch_database_fasta)
+		make_multifasta(ch_consensus_genes.mix(extract_genes_refs.out).collect())
+		make_msa(make_multifasta.out)
+		make_tree(make_msa.out)
+
+	emit:
+		align = make_msa.out
+		tree = make_tree.out
+
+}
+
+workflow create_ptree {
+	take:
+		ch_consensus_genes
+		ch_database_fasta
+
+	main:
+		extract_genes_refs(ch_database_fasta)
+		make_multifasta(ch_consensus_genes.mix(extract_genes_refs.out).collect())
+		make_msa(make_multifasta.out)
+		make_tree(make_msa.out)
+
+	emit:
+		align = make_msa.out
+		tree = make_tree.out
+	
 }
 
 workflow {
@@ -191,21 +228,27 @@ workflow {
 		mask_low_coverage(sort_filter_index_sam.out)
 		make_consensus(get_common_snps.out.join(select_best_reference.out.ref).join(mask_low_coverage.out))
 
-		run_custom_qc(sort_filter_index_sam.out.join(select_best_reference.out.ref).join(make_consensus.out))
-		run_custom_qc.out.csv.collectFile(name: "${params.outdir}/qc/custom/qc_all.csv", keepHeader: true, skip: 1)
+		extract_genes_samples(make_consensus.out)
 
-		make_multifasta(make_consensus.out.map{it -> it[1]}.collect())
-		make_msa(make_multifasta.out)
-		make_tree(make_msa.out)
+		create_gtree(extract_genes_samples.out.gtype, ch_blastdb_gtype_fasta)
 
-		// Collect al the relevant files for MULTIQC
-		ch_multiqc_inputs = Channel.empty()
-		ch_multiqc_inputs.mix(fastQC.out.zip.map{ it -> [it[1], it[2]]}.collect()).set{ch_multiqc_inputs}
-		ch_multiqc_inputs.mix(cutadapt.out.log).set{ch_multiqc_inputs}
-		ch_multiqc_inputs.mix(run_quast.out.tsv).set{ch_multiqc_inputs}
-		ch_multiqc_inputs.mix(fastp.out.json.map{it -> it[1]}).set{ch_multiqc_inputs}
-		ch_multiqc_inputs.mix(run_qualimap.out.main).set{ch_multiqc_inputs}
-		multiqc(ch_multiqc_inputs.collect().ifEmpty([]) )
+		create_ptree(extract_genes_samples.out.ptype, ch_blastdb_ptype_fasta)
+
+		// run_custom_qc(sort_filter_index_sam.out.join(select_best_reference.out.ref).join(make_consensus.out))
+		// run_custom_qc.out.csv.collectFile(name: "${params.outdir}/qc/custom/qc_all.csv", keepHeader: true, skip: 1)
+
+		// make_multifasta(make_consensus.out.map{it -> it[1]}.collect())
+		// make_msa(make_multifasta.out)
+		// make_tree(make_msa.out)
+
+		// // Collect al the relevant files for MULTIQC
+		// ch_multiqc_inputs = Channel.empty()
+		// ch_multiqc_inputs.mix(fastQC.out.zip.map{ it -> [it[1], it[2]]}.collect()).set{ch_multiqc_inputs}
+		// ch_multiqc_inputs.mix(cutadapt.out.log).set{ch_multiqc_inputs}
+		// ch_multiqc_inputs.mix(run_quast.out.tsv).set{ch_multiqc_inputs}
+		// ch_multiqc_inputs.mix(fastp.out.json.map{it -> it[1]}).set{ch_multiqc_inputs}
+		// ch_multiqc_inputs.mix(run_qualimap.out.main).set{ch_multiqc_inputs}
+		// multiqc(ch_multiqc_inputs.collect().ifEmpty([]) )
 
 		// ch_provenance = FluViewer.out.provenance
 		// ch_provenance = ch_provenance.join(hash_files.out.provenance).map{ it -> [it[0], [it[1]] << it[2]] }
