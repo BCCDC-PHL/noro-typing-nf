@@ -13,14 +13,14 @@ nextflow.enable.dsl = 2
 include { fastQC; fastq_check; run_quast; run_qualimap; run_custom_qc} from './modules/qc.nf'
 include { merge_databases; cutadapt; fastp; fastp_json_to_csv; run_kraken; kraken_filter } from './modules/prep.nf' 
 include { build_composite_reference; index_composite_reference ; get_reference_headers; dehost_fastq } from './modules/prep.nf'
-include { make_blast_database; run_self_blast; run_blastn; filter_alignments; run_blastx; select_best_reference } from './modules/blast.nf'
+include { make_blast_database; extract_genes_blast; run_self_blast; run_blastn; filter_alignments; run_blastx; select_best_reference } from './modules/blast.nf'
 //include { p_make_blast_database; p_run_self_blast; p_run_blastn; p_filter_alignments; p_get_best_references; p_run_blastx } from './modules/p_blast.nf'
 include { assembly } from './modules/assembly.nf'
 include { create_bwa_index; create_fasta_index; map_reads; sort_filter_index_sam; index_bam } from './modules/mapping.nf'
 include { run_freebayes; run_mpileup ; get_common_snps } from './modules/variant_calling.nf'
-include { get_coverage; plot_coverage} from "./modules/coverage.nf"
+include { get_coverage; plot_coverage; make_pileup} from "./modules/coverage.nf"
 include { mask_low_coverage; make_consensus } from './modules/consensus.nf'
-include { make_multifasta; make_msa; make_tree; extract_genes_samples; extract_genes_refs} from './modules/phylo.nf'
+include { make_multifasta; make_msa; make_tree; extract_sample_genes} from './modules/phylo.nf'
 include { multiqc } from './modules/multiqc.nf'
 
 println "HELLO. STARTING NOROVIRUS METAGENOMICS PIPELINE."
@@ -63,8 +63,8 @@ workflow genotyping {
 		ch_blastdb_fasta
 	main:
 		// GENOTYPE BLAST SEARCH
-		def workflow_type = 'gtype'
-		make_blast_database(ch_blastdb_fasta).first().set{ch_blastdb} // first() converts the channel from a consumable queue channel into an infinite single-value channel
+		extract_genes_blast(ch_blastdb_fasta)
+		make_blast_database(extract_genes_blast.out).first().set{ch_blastdb} // first() converts the channel from a consumable queue channel into an infinite single-value channel
 		run_blastn(ch_contigs, ch_blastdb)
 
 		// Needed for blast score ratio
@@ -76,12 +76,10 @@ workflow genotyping {
 			filter_alignments(run_blastn.out.combine(ch_blastdb_fasta).combine(run_self_blast.out))
 		}
 
-		//get_best_references(ch_gtype_refs)
 	emit:
 		main = filter_alignments.out.main
 		filter = filter_alignments.out.filter
-		ref = filter_alignments.out.ref
-
+		gene_db = extract_genes_blast.out
 }
 
 workflow ptyping {
@@ -90,8 +88,8 @@ workflow ptyping {
 		ch_blastdb_fasta
 	main:
 		// GENOTYPE BLAST SEARCH
-		params.workflow = 'ptype'
-		make_blast_database(ch_blastdb_fasta).first().set{ch_blastdb} // first() converts the channel from a consumable queue channel into an infinite single-value channel
+		extract_genes_blast(ch_blastdb_fasta)
+		make_blast_database(extract_genes_blast.out).first().set{ch_blastdb} // first() converts the channel from a consumable queue channel into an infinite single-value channel
 		run_blastn(ch_contigs, ch_blastdb)
 
 		// Needed for blast score ratio
@@ -103,21 +101,21 @@ workflow ptyping {
 			filter_alignments(run_blastn.out.combine(ch_blastdb_fasta).combine(run_self_blast.out))
 		}
 		
-		//get_best_references(filter_alignments.out)
 	emit:
 		main = filter_alignments.out.main
 		filter = filter_alignments.out.filter
-		ref = filter_alignments.out.ref
+		gene_db = extract_genes_blast.out
+
 }
 
 workflow create_gtree {
 	take:
-		ch_consensus_genes
-		ch_database_fasta
+		ch_consensus_fasta
+		ch_gene_database_fasta
 
 	main:
-		extract_genes_refs(ch_database_fasta)
-		make_multifasta(ch_consensus_genes.mix(extract_genes_refs.out).collect())
+		extract_sample_genes(ch_consensus_fasta.combine(ch_gene_database_fasta))
+		make_multifasta(ch_gene_database_fasta.mix(extract_sample_genes.out).collect())
 		make_msa(make_multifasta.out)
 		make_tree(make_msa.out)
 
@@ -129,19 +127,19 @@ workflow create_gtree {
 
 workflow create_ptree {
 	take:
-		ch_consensus_genes
-		ch_database_fasta
+		ch_consensus_fasta
+		ch_gene_database_fasta
 
 	main:
-		extract_genes_refs(ch_database_fasta)
-		make_multifasta(ch_consensus_genes.mix(extract_genes_refs.out).collect())
+		extract_sample_genes(ch_consensus_fasta.combine(ch_gene_database_fasta))
+		make_multifasta(ch_gene_database_fasta.mix(extract_sample_genes.out).collect())
 		make_msa(make_multifasta.out)
 		make_tree(make_msa.out)
 
 	emit:
 		align = make_msa.out
 		tree = make_tree.out
-	
+
 }
 
 workflow {
@@ -155,8 +153,8 @@ workflow {
 	ch_composite_paths = Channel.fromList([params.human_ref, params.virus_ref]).collect()
 	ch_human_ref = Channel.from(params.human_ref)
 	ch_centrifuge_db = Channel.from(params.centrifuge_db)
-	ch_blastdb_gtype_fasta = Channel.from(params.blastdb_gtype_fasta)
-	ch_blastdb_ptype_fasta = Channel.from(params.blastdb_ptype_fasta)
+	ch_blastdb_gtype_fasta = Channel.from(params.fullref_gtype_fasta)
+	ch_blastdb_ptype_fasta = Channel.from(params.fullref_ptype_fasta)
 	ch_fastq_input = Channel.fromFilePairs( params.fastq_search_path, flat: true ).map{ it -> [it[0].split('_')[0], it[1], it[2]] }.unique{ it -> it[0] }
 
 	main:
@@ -203,8 +201,7 @@ workflow {
 
 		// Pick best reference out of G & P type candidates
 		select_best_reference(genotyping.out.main.join(ptyping.out.main))
-
-		select_best_reference.out.blast.collect().collectFile(name: "${params.outdir}/blastn/final/final_types.tsv", keepHeader: true, skip: 1).set{ch_types}
+		select_best_reference.out.blast.collectFile(name: "${params.outdir}/blastn/final/final_types.tsv", keepHeader: true, skip: 1, newLine: true)
 		
 		create_bwa_index(select_best_reference.out.ref)
 
@@ -212,6 +209,8 @@ workflow {
 		map_reads(fastp.out.trimmed_reads.join(create_bwa_index.out))
 		sort_filter_index_sam(map_reads.out)
 
+		make_pileup(select_best_reference.out.ref.join(sort_filter_index_sam.out))
+		//create_pileup.out.metrics.collectFile(name: "${params.outdir}/qc/pileups", keepHeader: true, skip: 1)
 		run_qualimap(sort_filter_index_sam.out)
 
 		// PLOT COVERAGE
@@ -228,27 +227,24 @@ workflow {
 		mask_low_coverage(sort_filter_index_sam.out)
 		make_consensus(get_common_snps.out.join(select_best_reference.out.ref).join(mask_low_coverage.out))
 
-		extract_genes_samples(make_consensus.out)
+		create_gtree(make_consensus.out, genotyping.out.gene_db)
+		create_ptree(make_consensus.out, ptyping.out.gene_db)
 
-		create_gtree(extract_genes_samples.out.gtype, ch_blastdb_gtype_fasta)
+		run_custom_qc(sort_filter_index_sam.out.join(select_best_reference.out.ref).join(make_consensus.out))
+		run_custom_qc.out.csv.collectFile(name: "${params.outdir}/qc/custom/qc_all.csv", keepHeader: true, skip: 1)
 
-		create_ptree(extract_genes_samples.out.ptype, ch_blastdb_ptype_fasta)
+		make_multifasta(make_consensus.out.map{it -> it[1]}.collect())
+		make_msa(make_multifasta.out)
+		make_tree(make_msa.out)
 
-		// run_custom_qc(sort_filter_index_sam.out.join(select_best_reference.out.ref).join(make_consensus.out))
-		// run_custom_qc.out.csv.collectFile(name: "${params.outdir}/qc/custom/qc_all.csv", keepHeader: true, skip: 1)
-
-		// make_multifasta(make_consensus.out.map{it -> it[1]}.collect())
-		// make_msa(make_multifasta.out)
-		// make_tree(make_msa.out)
-
-		// // Collect al the relevant files for MULTIQC
-		// ch_multiqc_inputs = Channel.empty()
-		// ch_multiqc_inputs.mix(fastQC.out.zip.map{ it -> [it[1], it[2]]}.collect()).set{ch_multiqc_inputs}
-		// ch_multiqc_inputs.mix(cutadapt.out.log).set{ch_multiqc_inputs}
-		// ch_multiqc_inputs.mix(run_quast.out.tsv).set{ch_multiqc_inputs}
-		// ch_multiqc_inputs.mix(fastp.out.json.map{it -> it[1]}).set{ch_multiqc_inputs}
-		// ch_multiqc_inputs.mix(run_qualimap.out.main).set{ch_multiqc_inputs}
-		// multiqc(ch_multiqc_inputs.collect().ifEmpty([]) )
+		// Collect al the relevant files for MULTIQC
+		ch_multiqc_inputs = Channel.empty()
+		ch_multiqc_inputs.mix(fastQC.out.zip.map{ it -> [it[1], it[2]]}.collect()).set{ch_multiqc_inputs}
+		ch_multiqc_inputs.mix(cutadapt.out.log).set{ch_multiqc_inputs}
+		ch_multiqc_inputs.mix(run_quast.out.tsv).set{ch_multiqc_inputs}
+		ch_multiqc_inputs.mix(fastp.out.json.map{it -> it[1]}).set{ch_multiqc_inputs}
+		ch_multiqc_inputs.mix(run_qualimap.out.main).set{ch_multiqc_inputs}
+		multiqc(ch_multiqc_inputs.collect().ifEmpty([]) )
 
 		// ch_provenance = FluViewer.out.provenance
 		// ch_provenance = ch_provenance.join(hash_files.out.provenance).map{ it -> [it[0], [it[1]] << it[2]] }
