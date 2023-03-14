@@ -7,8 +7,25 @@ nextflow.enable.dsl=2
 
 import java.nio.file.Paths
 
+process extract_genes_blast {
+    storeDir "${projectDir}/cache/blast_db/${custom_dir}_gene"
+    
+    input:
+    path(blast_db)
+
+    output:
+    path("${blast_db.simpleName}_${gene}.fasta")
+
+    script:
+    custom_dir = task.ext.custom_dir ?: 'full_genome'
+    gene = task.ext.gene ?: ''
+    """
+    extract_genes.py database --query ${blast_db} --ref ${params.g1_reference} --positions ${params.g1_gene_positions} --gene ${gene} --output ${blast_db.simpleName}_${gene}.fasta
+    """
+}
+
 process make_blast_database {
-    storeDir "${projectDir}/cache/blast_db/${workflow_type}"
+    // storeDir "${projectDir}/cache/blast_db/${workflow_type}"
     
     input:
     path(fasta)
@@ -25,7 +42,7 @@ process make_blast_database {
 }
 
 process run_self_blast {
-    storeDir "${projectDir}/cache/blast_db/${workflow_type}"
+    //storeDir "${projectDir}/cache/blast_db/${workflow_type}"
     
     input:
     tuple path(blast_db), path("*")
@@ -82,8 +99,6 @@ process filter_alignments {
     tuple val(sample_id), path("${sample_id}*filter.tsv"), path("${sample_id}*fasta"), emit: main
     tuple val(sample_id), path("${sample_id}*full.tsv"), emit: full
     path("${sample_id}*filter.tsv"), emit: filter
-    tuple val(sample_id), path("${sample_id}*fasta"), emit: ref
-
 
     script:
     contig_mode = params.assemble ? "--contig_mode" : "" 
