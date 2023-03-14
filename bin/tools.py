@@ -197,6 +197,12 @@ def flex_translate(nt_seq):
 		min_count = aa_seq.count("*")
 		min_frame = 0
 
+	# flip 1 and 2
+	# this is to simplify the start position
+	# instead of padding the start and shifting downstream (how this function does it), we just start further downstream instead, hence pad1 = ORF2 and vice versa
+	if min_frame > 0:
+		min_frame = 1 if min_frame == 2 else 2
+
 	return best_seq, min_count, min_frame
 
 
@@ -204,23 +210,31 @@ def make_align_dict(ref, qry):
 	if len(ref) != len(qry):
 		print("ERROR: Sequences are not aligned")
 		return None
-
 	align_dict = {} # {reference_position: alignment_position}
 	qry_dict = {} # {alignment_position : qry_position}
 	ref_idx = 0
 	qry_idx = 0
-
 	for idx, ref_char in enumerate(ref):
 		if ref_char != "-":
 			align_dict[ref_idx] = idx
 			ref_idx += 1
-		
 		qry_dict[idx] = qry_idx
 		if qry[idx] != '-':
 			qry_idx += 1
-
 	return align_dict, qry_dict
 
+def get_boundaries (str):
+    gap_prefix = re.compile('^[-]+')
+    gap_suffix = re.compile('[-]+$')
+    # return a tuple giving indices of subsequence without gap prefix and suffix
+    res = [0,len(str)]
+    left = gap_prefix.findall(str)
+    right = gap_suffix.findall(str)
+    if left:
+        res[0] = len(left[0])
+    if right:
+        res[1] = len(str) - len(right[0])
+    return res
 
 if __name__ == '__main__':
 	seqs = parse_fasta(sys.argv[1])
