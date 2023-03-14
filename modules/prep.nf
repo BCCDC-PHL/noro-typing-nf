@@ -6,7 +6,7 @@ process merge_databases {
     path(database_2)
 
     output:
-    path("${params.virus_name}-full.fasta")
+    path("*fasta")
 
     script:
     """

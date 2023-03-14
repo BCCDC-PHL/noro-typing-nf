@@ -29,7 +29,7 @@ process make_consensus {
     
     """
     bcftools consensus -m ${mask_file} -f ${reference} ${common_vcf} > ${sample_id}.consensus.fasta &&
-    HEADER=`head -n 1 ${sample_id}.consensus.fasta | tr '${params.header_delim}>' '_'` &&
+    HEADER=`head -n 1 ${sample_id}.consensus.fasta | tr '${params.header_delim}>' '|'` &&
     sed -i 1d ${sample_id}.consensus.fasta &&
     sed -i 1i">${sample_id}\${HEADER}" ${sample_id}.consensus.fasta 
     """
