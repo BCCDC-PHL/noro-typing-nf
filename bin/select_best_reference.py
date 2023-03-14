@@ -14,8 +14,9 @@ def get_parser():
 	parser.add_argument('-P', '--pfasta', required=True, help='Sequences file in FASTA format. Either the contig file or reference BLAST database in FASTA format.')
 	# parser.add_argument('--contig', action='store_true', help='Sequences file in FASTA format. Either the contig file or reference BLAST database in FASTA format.')
 	# parser.add_argument('--sample_name', help='Sequences file in FASTA format. Either the contig file or reference BLAST database in FASTA format.')
-	# parser.add_argument('--accno_pos', default=0, help='Zero indexed position of accession number')
-	# parser.add_argument('--header_delim', default='|', help='Zero indexed position of accession number')
+	parser.add_argument('--accno_pos', default=0, help='Zero indexed position of accession number')
+	parser.add_argument('--type_pos', default=1, help='Zero indexed position of sequence type')
+	parser.add_argument('--header_delim', default='|', help='Zero indexed position of accession number')
 	parser.add_argument('-o', '--outfasta', default='best_reference.fasta', help='Output file in FASTA format.')
 	parser.add_argument('-O', '--outblast', default='best_reference.fasta', help='Output file in FASTA format.')
 	return parser
@@ -26,13 +27,13 @@ def select_best(gblast, pblast):
 	else:
 		return "ptype"
 
-# def rename(seq, sample_name, g_ref_name, p_ref_name, contig):
-# 	stype = 'contig' if contig else 'ref'
-# 	newname = '_'.join([sample_name, g_ref_name, p_ref_name, stype])
-# 	seq.id = newname
-# 	seq.name = newname
-# 	seq.description = ''
-# 	return seq
+def rename(seq, header):
+	# stype = 'contig' if contig else 'ref'
+	# newname = '_'.join([sample_name, g_ref_name, p_ref_name, stype])
+	# seq.id = header
+	# seq.name = header
+	seq.description = header
+	return seq
 
 def main():
 
@@ -57,14 +58,27 @@ def main():
 	
 	# g_accno = gtype_df['sseqid'][0].split(args.header_delim)[args.accno_pos]
 	# p_accno = ptype_df['sseqid'][0].split(args.header_delim)[args.accno_pos]
+	gfields = gfasta.id.split(args.header_delim)
+	pfields = pfasta.id.split(args.header_delim)
 
-	if select_best(gtype_df, ptype_df) == 'gtype':
+	choice = select_best(gtype_df, ptype_df)
+
+	newheader = "|".join([
+		gtype_df['sample_name'][0], 
+		gfields[args.type_pos] + "," + pfields[args.type_pos], 
+		gfields[args.accno_pos] + "," + pfields[args.accno_pos],
+		"g" if choice == 'gtype' else 'p'
+	])
+
+	if choice == 'gtype':
 		# gfasta = rename(gfasta, sample_name, g_accno, p_accno, args.contig)
+		gfasta = rename(gfasta, newheader)
 		SeqIO.write(gfasta, args.outfasta, 'fasta')
 		gtype_df.to_csv(args.outblast, sep='\t', index=False)
 
 	else:
 		# pfasta = rename(pfasta, sample_name, g_accno, p_accno, args.contig)
+		pfasta = rename(pfasta, newheader)
 		SeqIO.write(pfasta, args.outfasta, 'fasta')
 		ptype_df.to_csv(args.outblast, sep='\t', index=False)
 
