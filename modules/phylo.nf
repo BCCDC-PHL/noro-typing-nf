@@ -1,5 +1,5 @@
 process make_multifasta {
-    publishDir "${params.outdir}/phylo/align", pattern: "*fasta" , mode:'copy'
+    publishDir "${params.outdir}/phylo/${custom_dir}/align", pattern: "*fasta" , mode:'copy'
 
     input: 
 	path(sequences)
@@ -7,8 +7,13 @@ process make_multifasta {
     output:
     path("${params.run_name}.multi.fasta")
 
+    script:
+    custom_dir = task.ext.custom_dir ?: 'full_genome'
+    
 	"""
-	cat ${sequences} > ${params.run_name}.multi.fasta
+	cat ${sequences} > temp.fasta
+    filter_fasta.py temp.fasta ${params.run_name}.multi.fasta
+    rm temp.fasta
 	"""
 
 }
@@ -32,39 +37,21 @@ process make_msa {
 	"""
 }
 
-
-
-process extract_genes_samples { 
-    publishDir "${params.outdir}/phylo/polymerase", pattern: "*rdrp.fasta" , mode:'copy'
-    publishDir "${params.outdir}/phylo/capsid", pattern: "*vp1.fasta" , mode:'copy'
+process extract_sample_genes { 
+    publishDir "${params.outdir}/phylo/${custom_dir}", pattern: "*.fasta" , mode:'copy'
 
     input: 
-    tuple val(sample_id), path(consensus)
+    tuple val(sample_id), path(consensus), path(blast_gene_db)
 
     output:
-    path("${sample_id}*vp1.fasta"), emit: gtype
-    path("${sample_id}*rdrp.fasta"), emit: ptype
+    path("${sample_id}*.fasta")
 
-	"""
-    extract_genes.py --genes ${params.gene_positions} --gtype --ptype --prefix ${sample_id} ${consensus} ${params.g1_reference} 
-	"""
-}
-
-process extract_genes_refs { 
-    publishDir "${params.outdir}/phylo/${custom_dir}/", pattern: "*fasta" , mode:'copy'
-
-    input: 
-    path(reference)
-
-    output:
-    path("*.fasta")
-
-    script: 
-    // workflow_type = "${reference}" =~ /gtype/ ? "gtype" : "ptype" 
+    script:
+    gene = task.ext.gene ?: ''
     custom_dir = task.ext.custom_dir ?: 'full_genome'
-    workflow = task.ext.workflow ? "--${task.ext.workflow}" : ''
+
 	"""
-    extract_genes.py --genes ${params.gene_positions} ${workflow} --prefix ${reference.simpleName} ${reference} ${params.g1_reference} 
+    extract_genes.py sample --ref ${blast_gene_db} --query ${consensus} --gene ${gene} --output ${sample_id}_${gene}.fasta 
 	"""
 }
 
@@ -90,4 +77,21 @@ process make_tree {
     mv ${params.run_name}* archive
     mv archive/${params.run_name}${workflow}.treefile ./${params.run_name}${workflow}.nwk
 	"""
+}
+
+process make_annotated_tree {
+
+    conda "${projectDir}/environments/plot.yaml"
+
+    input:
+    tuple path(tree)
+
+    output:
+    path("${params.run_name}_annotated_tree.pdf")
+
+    script:
+
+    """
+    build_context_tree.R ${tree} ${params.run_name}_annotated_tree.pdf
+    """
 }
