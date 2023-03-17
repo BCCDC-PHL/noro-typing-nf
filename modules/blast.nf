@@ -25,36 +25,38 @@ process extract_genes_blast {
 }
 
 process make_blast_database {
-    // storeDir "${projectDir}/cache/blast_db/${workflow_type}"
+    storeDir "${projectDir}/cache/blast_db/${workflow}"
     
     input:
     path(fasta)
 
     output:
-    tuple path("${fasta}"), path("${fasta}.*")
+    path("${db_name}*")
 
     script:
-    db_name = "${fasta.simpleName}"
-    workflow_type = "${fasta}" =~ /gtype/ ? "gtype" : "ptype" 
+    workflow = task.ext.workflow ?: ''
+    db_name = "${workflow}_blastdb.fasta"
+
     """
-    makeblastdb -dbtype nucl -in ${fasta} -out ${fasta}
+    makeblastdb -dbtype nucl -in ${fasta} -out ${db_name}
+    cp ${fasta} ${db_name}
     """
 }
 
 process run_self_blast {
-    //storeDir "${projectDir}/cache/blast_db/${workflow_type}"
+    storeDir "${projectDir}/cache/blast_db/${workflow_type}"
     
     input:
-    tuple path(blast_db), path("*")
+    path(blast_db)
 
     output:
     path("${outfile}")
 
     script:
-    outfile = "${blast_db.simpleName}_ref_scores.tsv"
-    workflow_type = "${blast_db}" =~ /gtype/ ? "gtype" : "ptype" 
+    db_name = blast_db[0]
+    outfile = "${db_name.simpleName}_ref_scores.tsv"
     """
-    blastn -db ${blast_db} -query ${blast_db} -outfmt "6 qseqid sseqid score" > self_blast.tsv
+    blastn -db ${db_name} -query ${db_name} -outfmt "6 qseqid sseqid score" > self_blast.tsv
     awk '{ if (\$1 == \$2) print \$1"\t"\$3}' self_blast.tsv > out.tmp
     sed 1i"name\trefscore" out.tmp > ${outfile}
     rm out.tmp
@@ -75,9 +77,9 @@ process run_blastn {
     tuple val(sample_id), path("${sample_id}*.tsv")
 
     script:
-    workflow_type = "${blast_db}" =~ /gtype/ ? "gtype" : "ptype" 
+    workflow = task.ext.workflow ?: ''
     """
-    blastn -num_threads ${task.cpus} -query ${contig_file} -db ${blast_db} -outfmt "6 ${params.blast_outfmt}" > ${sample_id}_${workflow_type}_blastn.tsv
+    blastn -num_threads ${task.cpus} -query ${contig_file} -db ${blast_db} -outfmt "6 ${params.blast_outfmt}" > ${sample_id}_${workflow}_blastn.tsv
     """
 }
 
@@ -102,7 +104,7 @@ process filter_alignments {
 
     script:
     contig_mode = params.assemble ? "--contig_mode" : "" 
-    workflow_type = "${blast_results}" =~ /gtype/ ? "gtype" : "ptype" 
+    workflow = task.ext.workflow ?: ''
     """
     filter_alignments.py ${blast_results} \
     --metric bsr \
@@ -110,8 +112,8 @@ process filter_alignments {
     --seqs ${reference_fasta} \
     --ref_scores ${self_blast_scores} \
     --min_id ${params.min_blast_id} \
-    --tsv_out ${sample_id}_${workflow_type}_blastn_filter.tsv \
-    --fasta_out ${sample_id}_${workflow_type}_ref.fasta 
+    --tsv_out ${sample_id}_${workflow}_blastn_filter.tsv \
+    --fasta_out ${sample_id}_${workflow}_ref.fasta 
     """
 
 }
@@ -132,7 +134,6 @@ process get_best_references {
 
     script: 
     contig_mode = params.assemble ? "--contig_mode" : "" 
-    workflow_type = "${blast_filtered}" =~ /gtype/ ? "gtype" : "ptype" 
     """
     get_references.py --blast ${blast_filtered} --metric bsr --seqs ${reference_fasta} ${contig_mode} --output ${sample_id}.ref.fasta
     """
