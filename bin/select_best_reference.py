@@ -65,8 +65,8 @@ def main():
 
 	newheader = "|".join([
 		gtype_df['sample_name'][0], 
-		gfields[args.type_pos] + "," + pfields[args.type_pos], 
-		gfields[args.accno_pos] + "," + pfields[args.accno_pos],
+		gfields[args.type_pos] + "_" + pfields[args.type_pos], 
+		gfields[args.accno_pos] + "_" + pfields[args.accno_pos],
 		"g" if choice == 'gtype' else 'p'
 	])
 
