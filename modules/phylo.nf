@@ -5,14 +5,15 @@ process make_multifasta {
 	path(sequences)
 
     output:
-    path("${params.run_name}.multi.fasta")
+    path("${params.run_name}_${workflow}.multi.fasta")
 
     script:
     custom_dir = task.ext.custom_dir ?: 'full_genome'
+    workflow = task.ext.workflow ?: ''
     
 	"""
 	cat ${sequences} > temp.fasta
-    filter_fasta.py temp.fasta ${params.run_name}.multi.fasta
+    filter_fasta.py temp.fasta ${params.run_name}_${workflow}.multi.fasta
     rm temp.fasta
 	"""
 
@@ -55,6 +56,24 @@ process extract_sample_genes {
 	"""
 }
 
+process make_dates_file { 
+    publishDir "${params.outdir}/phylo/${custom_dir}/tree", pattern: "*" , mode:'copy'
+
+    input: 
+    path(multifasta)
+
+    output:
+    path("${out_name}")
+
+    script:
+    gene = task.ext.gene ?: ''
+    custom_dir = task.ext.custom_dir ?: 'full_genome'
+    out_name = "${multifasta.simpleName}_dates.tsv"
+	"""
+    get_dates.py ${multifasta} --output ${out_name}
+	"""
+}
+
 process make_tree {
 
     label 'ultra'
@@ -62,20 +81,22 @@ process make_tree {
     publishDir "${params.outdir}/phylo/${custom_dir}/tree", pattern: "*nwk" , mode:'copy'
 
     input: 
-    path(alignment)
+    path(infiles)
 
     output:
-    path("*nwk")
+    path("*nwk"), emit: tree
+    path("${params.run_name}_iqtree"), emit: archive
 
     script: 
     custom_dir = task.ext.custom_dir ?: 'full_genome'
-    workflow = task.ext.workflow ? "-${task.ext.workflow}" : ''
-    
+    workflow = task.ext.workflow ?: 'full'
+    alignment = infiles.size() == 2 ? infiles[0] : infiles
+    dates = infiles.size() == 2 ? "--date ${infiles[1]}" : ''
 	"""
-    iqtree -T ${task.cpus} -m GTR -s ${alignment} --prefix ${params.run_name}${workflow}
-    mkdir -p archive
-    mv ${params.run_name}* archive
-    mv archive/${params.run_name}${workflow}.treefile ./${params.run_name}${workflow}.nwk
+    iqtree -T ${task.cpus} -m GTR -s ${alignment} ${dates} --prefix ${params.run_name}_${workflow}
+    mkdir -p ${params.run_name}_iqtree
+    mv ${params.run_name}_${workflow}* ${params.run_name}_iqtree
+    cp ${params.run_name}_iqtree/${params.run_name}_${workflow}.treefile ./${params.run_name}_${workflow}.nwk
 	"""
 }
 
