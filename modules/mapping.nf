@@ -70,17 +70,3 @@ process sort_filter_index_sam {
     samtools index ${sample_id}.sorted.bam 
 	"""
 }
-
-
-process index_bam {
-
-    publishDir "${params.outdir}/mapped_reads/sorted", pattern: "${sample_id}*.bai" , mode:'copy'
-
-	input:
-	tuple val(sample_id), path(bamfile)
-	output:
-	tuple val(sample_id), path("${sample_id}*.bai")
-	"""
-	samtools index ${bamfile}
-	"""
-}
