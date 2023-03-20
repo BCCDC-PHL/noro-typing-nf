@@ -44,7 +44,7 @@ process make_blast_database {
 }
 
 process run_self_blast {
-    storeDir "${projectDir}/cache/blast_db/${workflow_type}"
+    storeDir "${projectDir}/cache/blast_db/${workflow}"
     
     input:
     path(blast_db)
@@ -55,11 +55,12 @@ process run_self_blast {
     script:
     db_name = blast_db[0]
     outfile = "${db_name.simpleName}_ref_scores.tsv"
+    workflow = task.ext.workflow ?: ''
     """
     blastn -db ${db_name} -query ${db_name} -outfmt "6 qseqid sseqid score" > self_blast.tsv
-    awk '{ if (\$1 == \$2) print \$1"\t"\$3}' self_blast.tsv > out.tmp
-    sed 1i"name\trefscore" out.tmp > ${outfile}
-    rm out.tmp
+    awk '{ if (\$1 == \$2) print \$1"\t"\$3}' self_blast.tsv > ${outfile}
+    sed -i 1i"name\trefscore" ${outfile}
+
     """
 }
 
@@ -67,19 +68,20 @@ process run_blastn {
 
     tag {sample_id}
 
-    publishDir "${params.outdir}/blastn/${workflow_type}/raw", pattern: "${sample_id}*.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow}/raw", pattern: "${sample_id}*.tsv" , mode:'copy'
 
     input:
     tuple val(sample_id), path(contig_file)
-    tuple path(blast_db), path("*")
+    path(blast_db)
 
     output:
     tuple val(sample_id), path("${sample_id}*.tsv")
 
     script:
     workflow = task.ext.workflow ?: ''
+    blast_db_name = blast_db[0]
     """
-    blastn -num_threads ${task.cpus} -query ${contig_file} -db ${blast_db} -outfmt "6 ${params.blast_outfmt}" > ${sample_id}_${workflow}_blastn.tsv
+    blastn -num_threads ${task.cpus} -query ${contig_file} -db ${blast_db_name} -outfmt "6 ${params.blast_outfmt}" > ${sample_id}_${workflow}_blastn.tsv
     """
 }
 
@@ -89,9 +91,9 @@ process filter_alignments {
 
     tag {sample_id}
 
-    publishDir "${params.outdir}/blastn/${workflow_type}/filtered", pattern: "${sample_id}*filter.tsv" , mode:'copy'
-    publishDir "${params.outdir}/blastn/${workflow_type}/full", pattern: "${sample_id}*full.tsv" , mode:'copy'
-    publishDir "${params.outdir}/blastn/${workflow_type}/final_refs", pattern: "${sample_id}*fasta" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow}/filtered", pattern: "${sample_id}*filter.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow}/full", pattern: "${sample_id}*full.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow}/final_refs", pattern: "${sample_id}*fasta" , mode:'copy'
 
 
     input: 
@@ -107,7 +109,7 @@ process filter_alignments {
     workflow = task.ext.workflow ?: ''
     """
     filter_alignments.py ${blast_results} \
-    --metric bsr \
+    --metric prop_covered \
     ${contig_mode} \
     --seqs ${reference_fasta} \
     --ref_scores ${self_blast_scores} \
@@ -118,26 +120,6 @@ process filter_alignments {
 
 }
 
-process get_best_references {
-
-    errorStrategy 'ignore'
-    
-    tag {sample_id}
-
-    publishDir "${params.outdir}/blastn/${workflow_type}/final_refs", pattern: "${sample_id}.ref.fasta" , mode:'copy'
-
-    input:
-    tuple val(sample_id), path(blast_filtered), path(reference_fasta)
-
-    output:
-    tuple val(sample_id), path("${sample_id}.ref.fasta")
-
-    script: 
-    contig_mode = params.assemble ? "--contig_mode" : "" 
-    """
-    get_references.py --blast ${blast_filtered} --metric bsr --seqs ${reference_fasta} ${contig_mode} --output ${sample_id}.ref.fasta
-    """
-}
 
 process select_best_reference {
     

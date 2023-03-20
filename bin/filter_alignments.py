@@ -26,7 +26,7 @@ def parse_blast(filepath):
 	blast_df[['genotype','strain']] = blast_df['sseqid'].str.split("|",expand=True)[[1,2]]
 	# compute the coverage column
 	# blast_df['coverage'] = blast_df['length'] * 100 / blast_df['slen']
-	blast_df['prop_match'] = blast_df['nident'] * 100 / blast_df['slen']
+	blast_df['prop_covered'] = blast_df['nident'] * 100 / blast_df['slen']
 	# add name column to the blast results 
 	sample_name = os.path.basename(filepath).split("_")[0]
 	blast_df.insert(0, 'sample_name', sample_name)
@@ -44,15 +44,16 @@ def add_blast_score_ratio(blast_df, ref_score_path):
 
 #%%
 def filter_alignments(blast_results, score_column, min_cov, min_id):
-	'''Find best contig for each genome segment. Returns datasheet with best contigs.'''
+	'''
+	Find best contig for each genome segment. Returns datasheet with best contigs.'''
 	print('Filtering alignments...')
 	# Annotate alignments with segment and subtype
 	# blast_results['segment'] = blast_results.apply(lambda row: row['sseqid'].split('|')[2], axis=1)
 	try: 
 		# Discard alignments below minimum identity threshold
 		# blast_results = blast_results[blast_results['pident']>=min_id]
-		
-		blast_results = blast_results.loc[blast_results['prop_match'] > 40]
+
+		# blast_results = blast_results.loc[blast_results['prop_covered'] > 40]
 		# Keep only best alignment for each contig (by choice of scoring metric, i.e. bitscore or score)
 
 		blast_results = blast_results.drop_duplicates()
