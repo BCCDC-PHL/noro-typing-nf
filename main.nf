@@ -16,11 +16,11 @@ include { build_composite_reference; index_composite_reference ; get_reference_h
 include { make_blast_database; extract_genes_blast; run_self_blast; run_blastn; filter_alignments; run_blastx; select_best_reference } from './modules/blast.nf'
 //include { p_make_blast_database; p_run_self_blast; p_run_blastn; p_filter_alignments; p_get_best_references; p_run_blastx } from './modules/p_blast.nf'
 include { assembly } from './modules/assembly.nf'
-include { create_bwa_index; create_fasta_index; map_reads; sort_filter_index_sam; index_bam } from './modules/mapping.nf'
+include { create_bwa_index; create_fasta_index; map_reads; sort_filter_index_sam } from './modules/mapping.nf'
 include { run_freebayes; run_mpileup ; get_common_snps } from './modules/variant_calling.nf'
 include { get_coverage; plot_coverage; make_pileup} from "./modules/coverage.nf"
 include { mask_low_coverage; make_consensus } from './modules/consensus.nf'
-include { make_multifasta; make_msa; make_tree; extract_sample_genes} from './modules/phylo.nf'
+include { make_multifasta; make_msa; make_dates_file; make_tree; extract_sample_genes} from './modules/phylo.nf'
 include { multiqc } from './modules/multiqc.nf'
 
 println "HELLO. STARTING NOROVIRUS METAGENOMICS PIPELINE."
@@ -116,12 +116,13 @@ workflow create_gtree {
 	main:
 		extract_sample_genes(ch_consensus_fasta.combine(ch_gene_database_fasta))
 		make_multifasta(ch_gene_database_fasta.mix(extract_sample_genes.out).collect())
+		make_dates_file(make_multifasta.out)
 		make_msa(make_multifasta.out)
-		make_tree(make_msa.out)
+		make_tree(make_msa.out.combine(make_dates_file.out))
 
 	emit:
 		align = make_msa.out
-		tree = make_tree.out
+		tree = make_tree.out.tree
 
 }
 
@@ -133,12 +134,13 @@ workflow create_ptree {
 	main:
 		extract_sample_genes(ch_consensus_fasta.combine(ch_gene_database_fasta))
 		make_multifasta(ch_gene_database_fasta.mix(extract_sample_genes.out).collect())
+		make_dates_file(make_multifasta.out)
 		make_msa(make_multifasta.out)
-		make_tree(make_msa.out)
+		make_tree(make_msa.out.combine(make_dates_file.out))
 
 	emit:
 		align = make_msa.out
-		tree = make_tree.out
+		tree = make_tree.out.tree
 
 }
 
@@ -237,7 +239,7 @@ workflow {
 		make_msa(make_multifasta.out)
 		make_tree(make_msa.out)
 
-		// Collect al the relevant files for MULTIQC
+		// Collect all the relevant files for MULTIQC
 		ch_multiqc_inputs = Channel.empty()
 		ch_multiqc_inputs.mix(fastQC.out.zip.map{ it -> [it[1], it[2]]}.collect()).set{ch_multiqc_inputs}
 		ch_multiqc_inputs.mix(cutadapt.out.log).set{ch_multiqc_inputs}
