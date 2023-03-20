@@ -132,9 +132,9 @@ def main():
 		print("WARNING: No data found in blast input file. Exiting...")
 		sys.exit(0)
 
-	if args.ref_scores and args.metric == 'bsr':
-		print("Computing blast score ratios...")
-		blast_df = add_blast_score_ratio(blast_df, args.ref_scores)
+	#if args.ref_scores and args.metric == 'bsr':
+	print("Computing blast score ratios...")
+	blast_df = add_blast_score_ratio(blast_df, args.ref_scores)
 		
 	# blast_df.to_csv(args.blastn.split(".tsv")[0] + '_bsr.tsv', index=False)
 
