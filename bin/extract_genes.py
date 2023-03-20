@@ -61,7 +61,6 @@ def init_parser():
 def init_aligner():
 	aligner = Align.PairwiseAligner()
 	aligner.mode = 'global'
-
 	aligner.open_gap_score = -2.0
 	aligner.extend_gap_score = -0.1
 	aligner.target_end_gap_score = 0.0
@@ -248,7 +247,7 @@ def main_sample(args):
 	ref_seq_dict = {x.split(args.header_delim)[args.accno_pos]:y for x,y in ref_seq_dict.items()}
 
 	# parse out the reference accession number from the query FASTA file 
-	accnos = qry_seq.id.split("|")[2].split(",")
+	accnos = qry_seq.id.split("|")[2].split("_")
 
 	# adaptive search for the correct reference sequence (avoids need for an extra parameter)
 	ref_seq = None
