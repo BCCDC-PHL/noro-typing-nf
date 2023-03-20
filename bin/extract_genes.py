@@ -247,7 +247,7 @@ def main_sample(args):
 	ref_seq_dict = {x.split(args.header_delim)[args.accno_pos]:y for x,y in ref_seq_dict.items()}
 
 	# parse out the reference accession number from the query FASTA file 
-	accnos = qry_seq.id.split("|")[2].split("_")
+	accnos = qry_seq.id.split("|")[2].split("-")
 
 	# adaptive search for the correct reference sequence (avoids need for an extra parameter)
 	ref_seq = None
