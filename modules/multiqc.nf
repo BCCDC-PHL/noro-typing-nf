@@ -1,16 +1,18 @@
 process multiqc {
 
-    publishDir "${params.outdir}/multi_qc", pattern: "*_multiqc_report.html", mode:'copy'
+    conda 'multiqc'
+
+    publishDir "${params.outdir}/multi_qc", pattern: "*report.html", mode:'copy'
 
     input:
     path('*')
 
     output:
-    path('*_multiqc_*')
+    path('*report.html')
 
     script:
     """
-    multiqc . -n ${params.run_name}_multiqc_report.html
+    multiqc . --config ${params.multiqc_config} --filename ${params.run_name}_multiqc_report.html
     
     """
 }
