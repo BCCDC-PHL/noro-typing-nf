@@ -1,0 +1,6 @@
+module_order:
+  - cutadapt
+  - fastqc
+  - fastp
+  - quast
+  - qualimap

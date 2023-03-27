@@ -1,4 +1,4 @@
-process merge_databases {
+process make_union_database {
     storeDir "${projectDir}/cache/blast_db/union_db"
 
     input:
@@ -6,11 +6,13 @@ process merge_databases {
     path(database_2)
 
     output:
-    path("${params.virus_name}-full.fasta")
+    path("*_union_db.fasta"), emit: fasta
+    path("${params.virus_name}_union_headers.txt"), emit: headers
 
     script:
     """
-    merge_fastas.py ${database_1} ${database_2} ${params.virus_name}-full.fasta
+    merge_fastas.py ${database_1} ${database_2} ${params.virus_name}_union_db.fasta
+    grep ">" ${params.virus_name}_union_db.fasta | cut -c2- > ${params.virus_name}_union_headers.txt
     """
 }
 
@@ -18,8 +20,8 @@ process fastp {
 
     tag { sample_id }
 
-    publishDir "${params.outdir}/fastp", pattern: "${sample_id}*_R{1,2}.trim.fastq.gz" , mode:'copy'
-    publishDir "${params.outdir}/fastp/html", pattern: "${sample_id}*html" , mode:'copy'
+    publishDir "${params.outdir}/preprocess/fastp", pattern: "${sample_id}*_R{1,2}.trim.fastq.gz" , mode:'copy'
+    publishDir "${params.outdir}/preprocess/fastp/html", pattern: "${sample_id}*html" , mode:'copy'
 
     input:
     tuple val(sample_id), path(fastq1), path(fastq2)
@@ -36,7 +38,6 @@ process fastp {
     printf -- "  tool_name: fastp\\n  tool_version: \$(fastp --version 2>&1 | cut -d ' ' -f 2)\\n" >> ${sample_id}_fastp_provenance.yml
     fastp \
       -t ${task.cpus} \
-      --umi --umi_loc=read1 --umi_len=8 \
       -i ${fastq1} \
       -I ${fastq2} \
       -o ${sample_id}_R1.trim.fastq.gz \
@@ -50,7 +51,7 @@ process fastp {
 process fastp_json_to_csv {
     tag { sample_id }
 
-    publishDir path: "${params.outdir}/fastp/csv", pattern: "${sample_id}*csv", mode: "copy"
+    publishDir path: "${params.outdir}/preprocess/fastp/csv", pattern: "${sample_id}*csv", mode: "copy"
 
     input: 
     tuple val(sample_id), path(fastp_json)
@@ -67,11 +68,11 @@ process cutadapt {
 
     tag { sample_id }
 
-    publishDir "${params.outdir}/cutadapt", pattern: "${sample_id}_R{1,2}.trimmed.fastq.gz", mode:'copy'
-    publishDir "${params.outdir}/cutadapt", pattern: "*cutadapt.log", mode:'copy'
+    publishDir "${params.outdir}/preprocess/cutadapt", pattern: "${sample_id}_R{1,2}.trimmed.fastq.gz", mode:'copy'
+    publishDir "${params.outdir}/preprocess/cutadapt/logs", pattern: "*cutadapt.log", mode:'copy'
 
     input:
-    tuple val(sample_id), path(reads_1), path(reads_2), path(adapters)
+    tuple val(sample_id), path(reads_1), path(reads_2)
 
     output:
     tuple val(sample_id), path("${sample_id}_R1.trimmed.fastq.gz"), path("${sample_id}_R2.trimmed.fastq.gz"), emit: trimmed_reads
@@ -84,8 +85,8 @@ process cutadapt {
     printf -- "  tool_name: cutadapt\\n  tool_version: \$(cutadapt --version 2>&1 | cut -d ' ' -f 2)\\n" >> ${sample_id}_cutadapt_provenance.yml
     cutadapt \
       -j ${task.cpus} \
-      -g file:${adapters} \
-      -G file:${adapters} \
+      -g file:${params.primers} \
+      -G file:${params.primers_rev} \
       -o ${sample_id}_R1.trimmed.fastq.gz \
       -p ${sample_id}_R2.trimmed.fastq.gz \
       ${reads_1} \
@@ -102,8 +103,8 @@ process run_kraken {
 
     conda "${projectDir}/environments/kraken.yaml"
 
-    publishDir path: "${params.outdir}/kraken/reports", pattern: "${sample_id}.kraken.report", mode: "copy"
-    publishDir path: "${params.outdir}/kraken/output", pattern: "${sample_id}.kraken.out", mode: "copy"
+    publishDir path: "${params.outdir}/filtering/kraken/reports", pattern: "${sample_id}.kraken.report", mode: "copy"
+    publishDir path: "${params.outdir}/filtering/kraken/output", pattern: "${sample_id}.kraken.out", mode: "copy"
 
 
     input: 
@@ -126,7 +127,7 @@ process kraken_filter {
 
     conda "${projectDir}/environments/kraken.yaml"
 
-    publishDir path: "${params.outdir}/kraken/filtered", pattern: "${sample_id}*fastq.gz", mode: "copy"
+    publishDir path: "${params.outdir}/filtering/kraken/filtered", pattern: "${sample_id}*fastq.gz", mode: "copy"
 
     input:
     tuple val(sample_id), path(reads_1), path(reads_2), path(kraken_report), path(kraken_out)
@@ -212,22 +213,6 @@ process index_composite_reference {
     """
     bwa index -a bwtsw -b 10000000 ${composite_ref}
     """
-}
-
-process get_reference_headers {
-
-    input:
-    path(viral_reference)
-
-    output:
-    path("${ref_name}_headers.txt")
-
-    script:
-    ref_name = viral_reference.simpleName
-
-    """
-    grep ">" ${viral_reference} | cut -c2- > ${ref_name}_headers.txt
-    """    
 }
 
 process dehost_fastq {

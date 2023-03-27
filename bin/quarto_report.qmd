@@ -1,0 +1,382 @@
+---
+title: "Quarto Basics"
+format:
+  html:
+    code-fold: true
+    css: style.css
+jupyter: python3
+---
+:::{.column-screen-inset}
+
+# March 8th Run
+
+```{python}
+import numpy as np
+import pandas as pd
+import plotly.offline as plo
+import plotly.express as plx
+import plotly.io as pio
+import plotly.graph_objects as pgo
+from IPython.display import Markdown as md
+#import itables 
+from itertools import product
+import sys, os, re
+from glob import glob
+import gzip
+
+run_name = 'January 31st'
+base_path = f'/home/john.palmer/work/norovirus/'
+results_path = f'{base_path}/results-mar-8-4'
+
+def custom_wrap(iter, delim='<br>', per_line=5):
+    if len(iter) == 1: 
+        return iter[0]
+
+    num_lines = len(iter) // per_line
+    extra_pos = num_lines*per_line
+    extra_vals = iter[extra_pos:(extra_pos+(len(iter)%per_line)+1)]
+
+    lines = []
+    for n in range(per_line):
+        lines += [iter[n::per_line]]
+
+    lines = [",".join(x) for x in zip(*lines)]
+    lines.append(",".join(extra_vals))
+    return  delim + delim.join(lines)
+
+def prep_hist_continuous(values, names, bin_size=1):
+    df = pd.DataFrame({'values':values,"names":names})
+    df['bin'] = pd.cut(df['values'], bins=np.arange(0,df['values'].max() + bin_size, bin_size))
+    hist_df = df['bin'].value_counts().reset_index()
+    hist_df = hist_df.rename({'index': 'value','bin':'frequency'},axis=1)
+    hist_df['frequency'] = hist_df['frequency'].astype(int)
+    
+    def get_ids(val):
+        names = df.loc[val == df['bin'],'names']
+        return custom_wrap(names.tolist())
+
+    hist_df['ids'] = hist_df['value'].map(get_ids)
+    hist_df[['start','end']] = hist_df['value'].astype(str).str.extract('([\.\d]+), ([\.\d]+)',expand=True).astype(float)
+    hist_df['med'] = (hist_df['start'] + hist_df['end']) / 2
+    return hist_df
+
+def context(filename):
+    if filename.endswith(".gz"):
+        return gzip.open(filename, 'rt')
+    else:
+        return open(filename, 'r') 
+
+def parse_vcf(path):
+    name = os.path.basename(path).split(".")[0]
+
+    with context(path) as infile:
+        lines = infile.readlines()
+
+    lines = [x for x in lines if not x.startswith("##")]
+    lines = [x.rstrip("\n").split("\t") for x in lines]
+
+    vcf = pd.DataFrame(lines[1:], columns=lines[0])
+    vcf['POS'] = vcf['POS'].astype(int)
+
+    return vcf, name
+
+def count_bins(posx, upper=7500, interval=250):
+    bins = np.linspace(0,upper,num=(upper//interval)+1)
+    posx = pd.Series(posx)
+    num_groups = posx.groupby(pd.cut(posx, bins=bins)).size()
+    return num_groups
+```
+
+## BLAST Calls
+
+```{python}
+#| label: Genotype Calls
+#| fig-cap: "Final genotype calls for all samples"
+
+blastn_path = f'{results_path}/blastn/gtype/full'
+
+rows = []
+
+blast_files = glob(f'{results_path}/blastn/gtype/full/*filter_full.tsv')
+
+for blast_file in blast_files:
+    df = pd.read_csv(blast_file, sep='\t')
+    df = df.sort_values('prop_covered',ascending=False)
+
+    df['type_strain'] = df.genotype + "-" + df.strain
+
+    row = [df['sample_name'][0]]
+    for i in range(3):
+        row += df[['type_strain','prop_covered','bsr']].iloc[0].tolist()
+    rows.append(row)
+
+col_names = "sample_name first_call first_cover first_score second_call second_cover second_score third_call third_cover third_score".split()
+
+vals = [('sample','name')] + list(product(['first','second','third'],['type','coverage','score']))
+
+midx = pd.MultiIndex.from_tuples(vals, names=['call','values'])
+
+os.environ['BLAST_PATH'] = blast_files[0]
+
+gtype_calls = pd.DataFrame(rows, columns=col_names).sort_values('sample_name').reset_index(drop=True)
+gtype_calls.columns = midx
+gtype_calls
+```
+
+```{python}
+md('Hey this is a test! {{< downloadthis ' + blast_files[0] +  ' dname="blast.tsv" label="Download BLAST data" icon="database-fill-down" type="info">}}')
+```
+
+```{python}
+#| label: P-type Calls
+#| fig-cap: "Final P-type calls for all samples"
+
+blastn_path = f'{results_path}/blastn/ptype/full'
+
+rows = []
+
+for blast_file in glob(f'{results_path}/blastn/ptype/full/*filter_full.tsv'):
+    df = pd.read_csv(blast_file, sep='\t')
+    df = df.sort_values('bsr',ascending=False)
+
+    df['type_strain'] = df.genotype + "_" + df.strain
+    
+    rows.append([df['sample_name'][0] , *df['type_strain'].iloc[0:3].to_list()])
+
+col_names = "sample_name first_call second_call third_call".split()
+
+ptype_calls = pd.DataFrame(rows, columns=col_names).sort_values('sample_name').reset_index(drop=True)
+ptype_calls
+```
+
+
+```{python}
+blastn_path = f'{results_path}/blastn/final'
+gtypes = pd.read_csv(blastn_path+'/gtypes.tsv',sep='\t')
+gtypes = gtypes.drop(['sseqid', 'qseqid'], axis=1)
+gtypes
+```
+
+## SNP Distributions
+```{python}
+vcf_path = f'{results_path}/vcf/common/'
+sample_names = []
+count_totals = []
+bin_counts = []
+
+
+for vcf in glob(vcf_path + "*vcf.gz" ):
+    df, name = parse_vcf(vcf)
+    sample_names += (name,)
+    count_totals += (df.shape[0],)
+    bin_counts += (count_bins(df['POS']),)
+
+#print(count_bins)
+snp_heatmap = pd.DataFrame(bin_counts)
+snp_heatmap.index = sample_names
+snp_heatmap = snp_heatmap.sort_index()
+snp_heatmap.columns = snp_heatmap.columns.map(lambda x: str(x).strip(']').split(", ")[-1])
+```
+
+```{python}
+#| label: SNP Density Heatmap 
+#| fig-cap: "Number of SNPs found across all genomes"
+fig = plx.imshow(snp_heatmap, width=1800, height=20*snp_heatmap.shape[0] + 200, aspect='auto')
+fig.update_xaxes(tickangle=45)
+fig.show()
+```
+
+## Genome Coverage 
+```{python}
+def get_genome_coverage(bed_path):
+    sample_name = os.path.basename(bed_path).split('_')[0]
+    df = pd.read_csv(bed_path, sep='\t',header=None)
+    df.columns = "name pos depth".split()
+    return df, sample_name 
+
+def get_binned_means(positions, values, upper=7500, interval=250):
+    bins = np.linspace(0,upper,num=(upper//interval)+1)
+    positions = pd.Series(positions)
+    values = pd.Series(values)
+    group_means = values.groupby(pd.cut(positions, bins=bins)).mean()
+    return group_means
+
+bed_path = f'{results_path}/qc/coverage/bed/'
+
+min_depth = 10
+names = []
+cov_global = []
+cov_raw = []
+cov_counts = []
+
+for bed in glob(bed_path + "*bed"):
+    df, name = get_genome_coverage(bed)
+
+    coverage = (df['depth'] > min_depth).sum() * 100 / df.shape[0] if df.shape[0] > 0 else 0
+
+    names += (name,)
+    cov_global += (coverage,)
+    cov_raw += (df['depth'].tolist(),)
+
+    means = get_binned_means(df['pos'], df['depth'])
+    zero_mask = means < 1
+    means.loc[zero_mask] = 0 
+    means.loc[~zero_mask] = means.loc[~zero_mask].map(np.log10)
+    if any(means > 10):
+        print(means)
+    cov_counts += (means,)
+```
+
+
+```{python}
+#| label: Coverage Histogram
+#| fig-cap: "Distribution of global mean genome coverages across isolates."
+flag_threshold = 80
+
+hist_df = prep_hist_continuous(cov_global, names, 5)
+hist_df['pass'] = hist_df['end'].map(lambda x: 0 if x < flag_threshold else 1)
+
+colors = pd.Series(['rgba(170,0,0,0.8)','rgba(0, 140, 255,0.8)']) # 0 = green for pass, 1 = red for fail
+
+fig = plx.bar(hist_df, x='med',y='frequency', custom_data=['ids'])
+fig.update_xaxes(showline=True, linewidth=2, linecolor='black', title_text = "Genome Coverage (%)", tickwidth=1, ticklen=5, nticks=11, tickcolor='black', ticks="outside",)
+fig.update_yaxes(title_text = "Frequency",  showline=True, linewidth=2, linecolor='black', tickwidth=1, ticklen=5, tickcolor='black', ticks="outside",dtick=1)
+fig.update_traces(
+    hovertemplate="<br>".join([
+        "Samples: %{customdata[0]}"
+    ]),
+    marker_color=colors[hist_df['pass']]
+)
+fig.show()
+```
+
+```{python}
+#| label: Sequencing Depth Heatmap
+#| fig-cap: "Distribution of sequencing depth across the genome for all samples."
+
+cov_heatmap = pd.DataFrame(cov_counts)
+cov_heatmap.index = names
+cov_heatmap = cov_heatmap.sort_index()
+cov_heatmap.columns = cov_heatmap.columns.map(lambda x: str(x).strip(']').split(", ")[-1])
+
+fig = plx.imshow(cov_heatmap, width=1800, height=20*snp_heatmap.shape[0] + 200, aspect='auto')
+fig.update_xaxes(title_text = "Position", tickangle=45)
+fig.update_yaxes(title_text = "Sample Name")
+fig.show()
+
+```
+
+```{python}
+df = pd.DataFrame(cov_raw)
+df.index = names
+df = df.transpose()
+df = df.reset_index()
+df = pd.melt(df, id_vars=['index'])
+df = df.rename({'variable':'sample_name', 'value':'depth'}, axis=1)
+
+def nth_sampling(series, every=10):
+    idx = np.arange(0, len(series), every)[:-1]   # drop the last value to prevent exceeding size N 
+    rand_vals = np.random.randint(0,every,len(idx))
+    idx = idx + rand_vals
+    series = series.iloc[idx]
+    return series
+
+df_group = df.groupby('sample_name')
+
+df = df_group.apply(lambda x : nth_sampling(x))
+
+zero_mask = means < 1
+df['log_depth'] = 0
+df.loc[df['depth'] >= 1, 'log_depth'] = df.loc[df['depth'] >= 1, 'depth'].map(np.log10)
+
+fig = plx.line(df, x='index',y='log_depth',color='sample_name')
+fig.update_xaxes(title_text = "Position")
+fig.update_yaxes(title_text = "Log10 Depth")
+fig.update_layout(legend=dict(
+    title="Sample Name",
+))
+
+fig.show()
+```
+
+```{python}
+from Bio import Phylo
+from Bio.Phylo.TreeConstruction import DistanceCalculator
+from Bio import AlignIO
+
+aln_path = glob(f'{results_path}/phylo/full_genome/align/*align.fasta')[0]
+
+
+alignment = next(AlignIO.parse(aln_path, 'fasta'))
+
+calculator = DistanceCalculator('identity')
+
+dist_mtx = calculator.get_distance(alignment)
+sample_names = [x.split('|')[0] for x in dist_mtx.names]
+dist_df = pd.DataFrame(list(dist_mtx), columns=sample_names)
+dist_df.index = sample_names
+dist_df = dist_df.sort_index()
+dist_df = dist_df.sort_index(axis=1)
+dist_df
+```
+```{python}
+fig = plx.imshow(dist_df, width=1600, height=20*dist_df.shape[0] + 200, aspect='auto')
+fig.show()
+
+```
+
+```{python}
+dist_list = list(dist_mtx)
+
+dist_list = [dist_list[i][i+1:] for i in range(0, len(dist_list)-1)]
+dist_df = pd.DataFrame([y for x in dist_list for y in x], columns=['snp_dist'])
+
+```
+
+```{python}
+fig = plx.histogram(dist_df, x='snp_dist', nbins=50)
+fig.update_xaxes(title_text = "Pairwise SNP Distance")
+fig.update_yaxes(title_text = "Frequency")
+
+fig.show()
+
+```
+
+
+```{python}
+import os
+from ete3 import Tree, PhyloTree, TreeStyle
+os.environ['QT_QPA_PLATFORM']='offscreen'
+# tree_path = glob(f'{results_path}/phylo/full_genome/tree/*.nwk')[0]
+
+# tree = PhyloTree(tree_path, alignment="".join(aln_data), alg_format="fasta")
+# tree.render('%%inline', tree_style=TreeStyle())
+fasta_txt = """
+>seqA
+MAEIPDETIQQFMALT---HNIAVQYLSEFGDLNEALNSYYASQTDDIKDRREEAH
+>seqB
+MAEIPDATIQQFMALTNVSHNIAVQY--EFGDLNEALNSYYAYQTDDQKDRREEAH
+>seqC
+MAEIPDATIQ---ALTNVSHNIAVQYLSEFGDLNEALNSYYASQTDDQPDRREEAH
+>seqD
+MAEAPDETIQQFMALTNVSHNIAVQYLSEFGDLNEAL--------------REEAH
+"""
+
+# Load a tree and link it to an alignment.
+t = PhyloTree("(((seqA,seqB),seqC),seqD);", alignment=fasta_txt, alg_format="fasta")
+#t.link_to_alignment()
+```
+
+```{r}
+require(ggtree)
+require(ggplot2)
+require(ape)
+require(stringr)
+base = '/home/john.palmer/work/norovirus/results-mar-8-4'
+tree_path = paste0(base, '/phylo/full_genome/tree/mar-8-4_gtype.nwk')
+
+print(tree_path)
+
+```
+
+:::

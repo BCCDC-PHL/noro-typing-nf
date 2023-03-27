@@ -7,101 +7,143 @@ nextflow.enable.dsl=2
 
 import java.nio.file.Paths
 
+process prep_database {
+    storeDir "${projectDir}/cache/blast_db/${workflow}_full"
+    
+    input:
+    path(database)
+
+    output:
+    path("*filter.fasta")
+
+    script:
+    workflow = task.ext.workflow ?: 'full_genome'
+    """
+    filter_fasta.py \
+    --header_delim ${params.header_delim} \
+    --header_pos_accno ${params.header_pos_accno} \
+    --header_pos_type ${params.header_pos_type} \
+    ${database} ${database.simpleName}_filter.fasta
+    """
+}
+
+process extract_genes_blast {
+    storeDir "${projectDir}/cache/blast_db/${custom_dir}_gene"
+    
+    input:
+    path(blast_db)
+
+    output:
+    path("${blast_db.simpleName}_${gene}.fasta")
+
+    script:
+    custom_dir = task.ext.custom_dir ?: 'full_genome'
+    gene = task.ext.gene ?: ''
+    """
+    extract_genes.py database --query ${blast_db} --ref ${params.g1_reference} --positions ${params.g1_gene_positions} --gene ${gene} --output ${blast_db.simpleName}_${gene}.fasta
+    """
+}
+
 process make_blast_database {
-    storeDir "${projectDir}/cache/blast_db/${workflow_type}"
+    storeDir "${projectDir}/cache/blast_db/${custom_dir}_gene"
     
     input:
     path(fasta)
 
     output:
-    tuple path("${db_name}"), path("${db_name}.*")
+    path("${db_name}*")
 
     script:
-    db_name = "${fasta.simpleName}"
-    workflow_type = "${fasta}" =~ /gtype/ ? "gtype" : "ptype" 
+    workflow = task.ext.workflow ?: ''
+    db_name = "${workflow}_blastdb.fasta"
+
     """
     makeblastdb -dbtype nucl -in ${fasta} -out ${db_name}
-    cp -P ${fasta} ${db_name}
+    cp ${fasta} ${db_name}
     """
 }
 
 process run_self_blast {
-    storeDir "${projectDir}/cache/blast_db/${workflow_type}"
+    storeDir "${projectDir}/cache/blast_db/${custom_dir}_gene"
     
     input:
-    tuple path(blast_db), path("*")
+    path(blast_db)
 
     output:
     path("${outfile}")
 
     script:
-    outfile = "${blast_db.simpleName}_ref_scores.tsv"
-    workflow_type = "${blast_db}" =~ /gtype/ ? "gtype" : "ptype" 
+    db_name = blast_db[0]
+    outfile = "${db_name.simpleName}_ref_scores.tsv"
+    workflow = task.ext.workflow ?: ''
     """
-    blastn -db ${blast_db} -query ${blast_db} -outfmt "6 qseqid sseqid score" > self_blast.tsv
-    awk '{ if (\$1 == \$2) print \$1"\t"\$3}' self_blast.tsv > out.tmp
-    sed 1i"name\trefscore" out.tmp > ${outfile}
-    rm out.tmp
+    blastn -db ${db_name} -query ${db_name} -outfmt "6 qseqid sseqid score" > self_blast.tsv
+    awk '{ if (\$1 == \$2) print \$1"\t"\$3}' self_blast.tsv > ${outfile}
+    sed -i 1i"name\trefscore" ${outfile}
     """
 }
 
 process run_blastn {
 
-    tag {sample_id}
-
-    publishDir "${params.outdir}/blastn/${workflow_type}/raw", pattern: "${sample_id}*.tsv" , mode:'copy'
-
-    input:
-    tuple val(sample_id), path(contig_file)
-    tuple path(blast_db), path("*")
-
-    output:
-    tuple val(sample_id), path("${sample_id}*.tsv")
-
-    script:
-    workflow_type = "${blast_db}" =~ /gtype/ ? "gtype" : "ptype" 
-    """
-    blastn -query ${contig_file} -db ${blast_db} -outfmt "6 qseqid sseqid pident qlen slen bitscore score" > ${sample_id}_blastn.tsv
-    """
-}
-
-process filter_alignments {
+    label 'medium'
 
     tag {sample_id}
 
-    publishDir "${params.outdir}/blastn/${workflow_type}", pattern: "${sample_id}*filter.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow}/raw", pattern: "${sample_id}*blastn.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow}/filtered", pattern: "${sample_id}*filter.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow}/full", pattern: "${sample_id}*full.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow}/final_refs", pattern: "${sample_id}*fasta" , mode:'copy'
 
     input: 
-    tuple val(sample_id), path(blast_output), path(self_blast_scores)
+    tuple val(sample_id), path(contig_file), path(reference_fasta), path(self_blast_scores)
+    path(blast_db)
 
     output:
-    tuple val(sample_id), path("${sample_id}*filter.tsv")
+    tuple val(sample_id), path("${sample_id}*blastn.tsv"), emit: raw
+    tuple val(sample_id), path("${sample_id}*filter.tsv"), path("${sample_id}*fasta"), emit: main
+    tuple val(sample_id), path("${sample_id}*full.tsv"), emit: full
+    path("${sample_id}*filter.tsv"), emit: filter
 
     script:
-    workflow_type = "${self_blast_scores}" =~ /gtype/ ? "gtype" : "ptype" 
+    contig_mode = params.assemble ? "--contig_mode" : "" 
+    workflow = task.ext.workflow ?: ''
+    blast_db_name = blast_db[0]
     """
-    filter_alignments.py ${blast_output} --metric bsr --ref_scores ${self_blast_scores} --min_cov ${params.min_blast_cov} --min_id ${params.min_blast_id} --output ${sample_id}_blastn_${workflow_type}_filter.tsv
+    blastn -num_threads ${task.cpus} -query ${contig_file} -db ${blast_db_name} -outfmt "6 ${params.blast_outfmt}" > ${sample_id}_${workflow}_blastn.tsv &&
+    filter_alignments.py ${sample_id}_${workflow}_blastn.tsv \
+    --metric prop_covered \
+    ${contig_mode} \
+    --seqs ${reference_fasta} \
+    --ref_scores ${self_blast_scores} \
+    --min_id ${params.min_blast_id} \
+    --tsv_out ${sample_id}_${workflow}_blastn_filter.tsv \
+    --fasta_out ${sample_id}_${workflow}_ref.fasta 
     """
-
 }
 
-process get_best_references {
 
+process select_best_reference {
+    
     tag {sample_id}
 
-    publishDir "${params.outdir}/blastn/${workflow_type}/final_refs", pattern: "${sample_id}.ref.fasta" , mode:'copy'
+    publishDir "${params.outdir}/blastn/final/", pattern: "${sample_id}*fasta" , mode:'copy'
 
     input:
-    tuple val(sample_id), path(blast_filtered), path(reference_fasta)
+    tuple val(sample_id), path(gtype_blast), path(gtype_ref), path(ptype_blast), path(ptype_ref)
 
     output:
-    tuple val(sample_id), path("${sample_id}.ref.fasta")
+    tuple val(sample_id), path("${sample_id}.ref.final.fasta"), emit: ref
+    path("${sample_id}*final.tsv"), emit: blast
 
     script: 
-    contig_mode = params.assemble ? "--contig_mode" : "" 
-    workflow_type = "${blast_filtered}" =~ /gtype/ ? "gtype" : "ptype" 
     """
-    get_references.py --blast ${blast_filtered} --metric bsr --seqs ${reference_fasta} ${contig_mode} --output ${sample_id}.ref.fasta
+    select_best_reference.py \
+    -g ${gtype_blast} \
+    -p ${ptype_blast} \
+    -G ${gtype_ref} \
+    -P ${ptype_ref} \
+    --outfasta ${sample_id}.ref.final.fasta \
+    --outblast ${sample_id}.blast.final.tsv
     """
 }
 
@@ -121,6 +163,6 @@ process run_blastx {
     script:
     workflow_type = "${diamond_db}" =~ /gtype/ ? "gtype" : "ptype" 
     """
-    diamond blastx --threads ${task.cpus} -d ${diamond_db} -q ${contig_file} -o ${sample_id}_blastx.tsv --outfmt "6 qseqid sseqid pident qlen slen bitscore score"
+    diamond blastx --threads ${task.cpus} -d ${diamond_db} -q ${contig_file} -o ${sample_id}_blastx.tsv --outfmt "6 qseqid sseqid pident qlen slen length bitscore score"
     """
 }
