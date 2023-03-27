@@ -19,28 +19,36 @@ def get_parser():
 	parser.add_argument('-i','--min_id', default=90, type=int, help='Minimum nucleotide sequence identity between database reference sequence and contig (percentage, default = 90)')
 	return parser
 
-def parse_blast(filepath):
-	cols = 'qseqid sseqid pident qlen slen nident bitscore rawscore'.split(' ')
+def parse_blast(filepath, ref_score_path):
+	cols = 'qseqid sseqid pident qlen slen nident bitscore rawscore'.split()
 	blast_df = pd.read_csv(filepath, sep='\t', names=cols)
-	# split the header into genotype and strain columns 
-	blast_df[['genotype','strain']] = blast_df['sseqid'].str.split("|",expand=True)[[1,2]]
-	# compute the coverage column
-	# blast_df['coverage'] = blast_df['length'] * 100 / blast_df['slen']
-	blast_df['prop_covered'] = blast_df['nident'] * 100 / blast_df['slen']
-	# add name column to the blast results 
-	sample_name = os.path.basename(filepath).split("_")[0]
-	blast_df.insert(0, 'sample_name', sample_name)
-	return blast_df
 
+	try: 
+		if blast_df.shape[0] == 0:
+			raise ValueError("ERROR: BLAST input has 0 rows.")
+		
+		# split the header into genotype and strain columns 
+		blast_df[['genotype','strain']] = blast_df['sseqid'].str.split("|",expand=True)[[1,2]]
+		# compute the coverage column
+		# blast_df['coverage'] = blast_df['length'] * 100 / blast_df['slen']
+		blast_df['prop_covered'] = blast_df['nident'] * 100 / blast_df['slen']
+		
+		# BLAST SCORE RATIOS 
+		ref_scores = pd.read_csv(ref_score_path, sep='\t')
+		colnames = ref_scores.columns
+		blast_df = blast_df.merge(ref_scores, left_on='sseqid', right_on=colnames[0]).drop(colnames[0],axis=1)
+		blast_df['bsr'] = blast_df['rawscore'] * 100 / blast_df[colnames[1]]
 
-def add_blast_score_ratio(blast_df, ref_score_path):
-	ref_scores = pd.read_csv(ref_score_path, sep='\t')
-	colnames = ref_scores.columns
-	blast_df = blast_df.merge(ref_scores, left_on='sseqid', right_on=colnames[0]).drop(colnames[0],axis=1)
-	blast_df['bsr'] = blast_df['rawscore'] * 100 / blast_df[colnames[1]]
-	return blast_df
+		# add name column to the blast results 
+		sample_name = os.path.basename(filepath).split("_")[0]
+		blast_df.insert(0, 'sample_name', sample_name)
+		return blast_df
 
-
+	except Exception as e:
+		print(str(e))
+		print("ERROR: Failed to filter BLAST outputs (error above). Creating empty output files.")
+		final_cols = ['sample_name'] + cols + 'genotype strain prop_covered refscore bsr'.split()
+		return pd.DataFrame(columns=final_cols)
 
 #%%
 def filter_alignments(blast_results, score_column, min_cov, min_id):
@@ -92,6 +100,10 @@ def write_best_contigs(blast_results, contig_fasta, fasta_out):
 	'''
 	# De-duplicate rows from contigs with best alignments to multiple ref seqs 
 
+	if blast_results.shape[0] == 0:
+		open(fasta_out, 'w').close()
+		return True
+
 	if blast_results.shape[0] != 1:
 		print("WARNING: Number of final contigs is not equal to 1.")
 
@@ -110,6 +122,10 @@ def write_best_references(blast_results, ref_seqs_db, fasta_out):
 	Looks up best ref seqs in ref seqs DB FASTA file and writes them to their own FASTA file.
 	'''
 
+	if blast_results.shape[0] == 0:
+		open(fasta_out, 'w').close()
+		return True
+
 	if blast_results.shape[0] != 1:
 		print("WARNING: Number of final contigs is not equal to 1.")
 
@@ -126,30 +142,21 @@ def main():
 	parser = get_parser()
 	args = parser.parse_args()
 
-	blast_df = parse_blast(args.blastn)
+	blast_df = parse_blast(args.blastn, args.ref_scores)
 
 	if blast_df.shape[0] == 0:
-		print("WARNING: No data found in blast input file. Exiting...")
-		sys.exit(0)
+		print("WARNING: No data found in blast input file. Exiting with empty outputs.")
+		verbose_df = pd.DataFrame(columns=blast_df.columns)
 
-	#if args.ref_scores and args.metric == 'bsr':
-	print("Computing blast score ratios...")
-	blast_df = add_blast_score_ratio(blast_df, args.ref_scores)
-		
-	# blast_df.to_csv(args.blastn.split(".tsv")[0] + '_bsr.tsv', index=False)
+	else:
+		blast_df, verbose_df = filter_alignments(blast_df, args.metric, args.min_cov, args.min_id)
 
-	blast_df, verbose_df = filter_alignments(blast_df, args.metric, args.min_cov, args.min_id)
-
-	if not args.blastn.endswith("tsv"):
-		print("WARNING: Are blastn results in TSV format?")
 
 	if not args.tsv_out:
 		args.tsv_out = args.blastn.split(".tsv")[0] + '_filter.tsv'
 
-	if blast_df.shape[0] > 0:
-		blast_df.to_csv(args.tsv_out, index=False, sep='\t')
-	if verbose_df.shape[0] > 0:
-		verbose_df.to_csv(args.tsv_out.split(".")[0] + "_full.tsv", index=False, sep='\t')
+	blast_df.to_csv(args.tsv_out, index=False, sep='\t')
+	verbose_df.to_csv(args.tsv_out.split(".")[0] + "_full.tsv", index=False, sep='\t')
 
 	if args.contig_mode:
 		print("Running in contig (assembly) mode.")

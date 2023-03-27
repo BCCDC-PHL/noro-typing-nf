@@ -21,16 +21,6 @@ from tools import make_align_dict, translate_nuc, flex_translate, get_boundaries
 import re
 
 def init_parser():
-	# parser = argparse.ArgumentParser()
-	# parser.add_argument('-q', '--query', required=True, help='FASTA sequences to align to reference')
-	# parser.add_argument('-r', '--ref', required=True, help='Reference sequence FASTA file')
-	# parser.add_argument('-p', '--positions', required=True, help='YAML file containing gene positions for extraction')
-	# parser.add_argument('-g', '--gene', default='INFER', help='Gene to extract. Only relevant for multi-query BLAST extraction.')
-	# parser.add_argument('--debug', action='store_true')
-	# parser.add_argument('--accno_pos', default=0, help='Zero indexed position of accession number in reference FASTA header')
-	# parser.add_argument('--header_delim', default='|', help='Delimiter character used in the reference FASTA header')
-	# parser.add_argument('--output', help='Output FASTA file containing genes')
-
 	# create the top-level parser
 	parser = argparse.ArgumentParser(prog='PROG')
 	parser.add_argument('--debug', action='store_true')
@@ -247,7 +237,11 @@ def main_sample(args):
 	ref_seq_dict = {x.split(args.header_delim)[args.accno_pos]:y for x,y in ref_seq_dict.items()}
 
 	# parse out the reference accession number from the query FASTA file 
-	accnos = qry_seq.id.split("|")[2].split("-")
+	accnos = qry_seq.id.split("|")[2].split("_")
+
+	if accnos[0] == 'NA' or accnos[1] == 'NA':
+		print("ERROR: Sequence failed in an earlier BLAST step. No reference accession found.")
+		sys.exit(1)
 
 	# adaptive search for the correct reference sequence (avoids need for an extra parameter)
 	ref_seq = None
@@ -259,6 +253,7 @@ def main_sample(args):
 		ref_seq = ref_seq_dict[accnos[1]]
 	else:
 		print("ERROR: Not a valid gene entry.")
+		sys.exit(1)
 
 	# extract the gene and perform sanity checks for the right reading frame 
 	gene_record = extract_gene_by_gaps(aligner, ref_seq, qry_seq, args.debug)
