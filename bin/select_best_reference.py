@@ -5,6 +5,7 @@ import sys
 import pandas as pd 
 import argparse
 from Bio import SeqIO
+import traceback
 
 def get_parser():
 	parser = argparse.ArgumentParser()
@@ -43,44 +44,69 @@ def main():
 	gtype_df = pd.read_csv(args.gblast, sep='\t')
 	ptype_df = pd.read_csv(args.pblast, sep='\t')
 
-	gfasta = next(SeqIO.parse(args.gfasta, 'fasta'))
-	pfasta = next(SeqIO.parse(args.pfasta, 'fasta'))
+	try:
+		gfasta = next(SeqIO.parse(args.gfasta, 'fasta'))
+	except Exception:
+		print(traceback.format_exc())
+		gfasta = None
 
-	if gtype_df.shape[0] != 1 or ptype_df.shape[0] != 1:
-		print("WARNING: Filtered blast results do not contain a single entry as expected.")
+	try:
+		pfasta = next(SeqIO.parse(args.pfasta, 'fasta'))
+	except Exception:
+		print(traceback.format_exc())
+		pfasta = None
+
+	# [gtype, ptype]
+	output_types = ['NA','NA']
+	output_accno = ['NA','NA']
+
+	# ERROR -- both outputs failed 
+	if (gtype_df.shape[0] != 1 or not gfasta) and (ptype_df.shape[0] != 1 or not pfasta):
+		print('ERROR: Problems with BOTH gtype and ptype outputs')
 		print(f"Genotype results: {gtype_df.shape[0]}")
 		print(f"Ptype results: {ptype_df.shape[0]}")
-
-	# if args.sample_name: 
-	# 	sample_name = args.sample_name
-	# else:
-	# 	sample_name = os.path.basename(args.gblast).split("_")[0]
+		sys.exit(1)
 	
-	# g_accno = gtype_df['sseqid'][0].split(args.header_delim)[args.accno_pos]
-	# p_accno = ptype_df['sseqid'][0].split(args.header_delim)[args.accno_pos]
-	gfields = gfasta.id.split(args.header_delim)
-	pfields = pfasta.id.split(args.header_delim)
+	# valid ptype outputs; gtyping failed
+	elif gtype_df.shape[0] != 1 or not gfasta:
+		choice = 'ptype'
+		pfields = [x.replace("_","-") for x in pfasta.id.split(args.header_delim)]
+		output_types[1] = pfields[args.type_pos]
+		output_accno[1] =  pfields[args.accno_pos]
+		sample_name = ptype_df['sample_name'][0]
 
-	gfields = [x.replace("_","-") for x in gfields]
-	pfields = [x.replace("_","-") for x in pfields]
 
-	choice = select_best(gtype_df, ptype_df)
+	# valid gtype outputs; ptyping failed
+	elif ptype_df.shape[0] != 1 or not pfasta:
+		choice = 'gtype'
+		gfields = [x.replace("_","-") for x in gfasta.id.split(args.header_delim)]
+		output_types[0] = gfields[args.type_pos]
+		output_accno[0] =  gfields[args.accno_pos]
+		sample_name = gtype_df['sample_name'][0]
+
+	
+	# both outputs are valid
+	else:
+		choice = select_best(gtype_df, ptype_df)
+		gfields = [x.replace("_","-") for x in gfasta.id.split(args.header_delim)]
+		pfields = [x.replace("_","-") for x in pfasta.id.split(args.header_delim)]
+		sample_name = gtype_df['sample_name'][0]
+		output_types = [gfields[args.type_pos],	pfields[args.type_pos]]
+		output_accno = [gfields[args.accno_pos],pfields[args.accno_pos]]
 
 	newheader = "|".join([
-		gtype_df['sample_name'][0], 
-		gfields[args.type_pos] + "_" + pfields[args.type_pos], 
-		gfields[args.accno_pos] + "_" + pfields[args.accno_pos],
+		sample_name, 
+		"_".join(output_types),
+		"_".join(output_accno),
 		"g" if choice == 'gtype' else 'p'
 	])
 
 	if choice == 'gtype':
-		# gfasta = rename(gfasta, sample_name, g_accno, p_accno, args.contig)
 		gfasta = rename(gfasta, newheader)
 		SeqIO.write(gfasta, args.outfasta, 'fasta')
 		gtype_df.to_csv(args.outblast, sep='\t', index=False)
 
 	else:
-		# pfasta = rename(pfasta, sample_name, g_accno, p_accno, args.contig)
 		pfasta = rename(pfasta, newheader)
 		SeqIO.write(pfasta, args.outfasta, 'fasta')
 		ptype_df.to_csv(args.outblast, sep='\t', index=False)
