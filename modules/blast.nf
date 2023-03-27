@@ -7,6 +7,26 @@ nextflow.enable.dsl=2
 
 import java.nio.file.Paths
 
+process prep_database {
+    storeDir "${projectDir}/cache/blast_db/${workflow}_full"
+    
+    input:
+    path(database)
+
+    output:
+    path("*filter.fasta")
+
+    script:
+    workflow = task.ext.workflow ?: 'full_genome'
+    """
+    filter_fasta.py \
+    --header_delim ${params.header_delim} \
+    --header_pos_accno ${params.header_pos_accno} \
+    --header_pos_type ${params.header_pos_type} \
+    ${database} ${database.simpleName}_filter.fasta
+    """
+}
+
 process extract_genes_blast {
     storeDir "${projectDir}/cache/blast_db/${custom_dir}_gene"
     
@@ -25,7 +45,7 @@ process extract_genes_blast {
 }
 
 process make_blast_database {
-    storeDir "${projectDir}/cache/blast_db/${workflow}"
+    storeDir "${projectDir}/cache/blast_db/${custom_dir}_gene"
     
     input:
     path(fasta)
@@ -44,7 +64,7 @@ process make_blast_database {
 }
 
 process run_self_blast {
-    storeDir "${projectDir}/cache/blast_db/${workflow}"
+    storeDir "${projectDir}/cache/blast_db/${custom_dir}_gene"
     
     input:
     path(blast_db)
@@ -60,46 +80,26 @@ process run_self_blast {
     blastn -db ${db_name} -query ${db_name} -outfmt "6 qseqid sseqid score" > self_blast.tsv
     awk '{ if (\$1 == \$2) print \$1"\t"\$3}' self_blast.tsv > ${outfile}
     sed -i 1i"name\trefscore" ${outfile}
-
     """
 }
 
 process run_blastn {
 
-    tag {sample_id}
-
-    publishDir "${params.outdir}/blastn/${workflow}/raw", pattern: "${sample_id}*.tsv" , mode:'copy'
-
-    input:
-    tuple val(sample_id), path(contig_file)
-    path(blast_db)
-
-    output:
-    tuple val(sample_id), path("${sample_id}*.tsv")
-
-    script:
-    workflow = task.ext.workflow ?: ''
-    blast_db_name = blast_db[0]
-    """
-    blastn -num_threads ${task.cpus} -query ${contig_file} -db ${blast_db_name} -outfmt "6 ${params.blast_outfmt}" > ${sample_id}_${workflow}_blastn.tsv
-    """
-}
-
-process filter_alignments {
-
-    errorStrategy 'ignore'
+    label 'medium'
 
     tag {sample_id}
 
+    publishDir "${params.outdir}/blastn/${workflow}/raw", pattern: "${sample_id}*blastn.tsv" , mode:'copy'
     publishDir "${params.outdir}/blastn/${workflow}/filtered", pattern: "${sample_id}*filter.tsv" , mode:'copy'
     publishDir "${params.outdir}/blastn/${workflow}/full", pattern: "${sample_id}*full.tsv" , mode:'copy'
     publishDir "${params.outdir}/blastn/${workflow}/final_refs", pattern: "${sample_id}*fasta" , mode:'copy'
 
-
     input: 
-    tuple val(sample_id), path(blast_results), path(reference_fasta), path(self_blast_scores)
+    tuple val(sample_id), path(contig_file), path(reference_fasta), path(self_blast_scores)
+    path(blast_db)
 
     output:
+    tuple val(sample_id), path("${sample_id}*blastn.tsv"), emit: raw
     tuple val(sample_id), path("${sample_id}*filter.tsv"), path("${sample_id}*fasta"), emit: main
     tuple val(sample_id), path("${sample_id}*full.tsv"), emit: full
     path("${sample_id}*filter.tsv"), emit: filter
@@ -107,8 +107,10 @@ process filter_alignments {
     script:
     contig_mode = params.assemble ? "--contig_mode" : "" 
     workflow = task.ext.workflow ?: ''
+    blast_db_name = blast_db[0]
     """
-    filter_alignments.py ${blast_results} \
+    blastn -num_threads ${task.cpus} -query ${contig_file} -db ${blast_db_name} -outfmt "6 ${params.blast_outfmt}" > ${sample_id}_${workflow}_blastn.tsv &&
+    filter_alignments.py ${sample_id}_${workflow}_blastn.tsv \
     --metric prop_covered \
     ${contig_mode} \
     --seqs ${reference_fasta} \
@@ -117,7 +119,6 @@ process filter_alignments {
     --tsv_out ${sample_id}_${workflow}_blastn_filter.tsv \
     --fasta_out ${sample_id}_${workflow}_ref.fasta 
     """
-
 }
 
 

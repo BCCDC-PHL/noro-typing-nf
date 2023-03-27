@@ -1,4 +1,4 @@
-process merge_databases {
+process make_union_database {
     storeDir "${projectDir}/cache/blast_db/union_db"
 
     input:
@@ -6,11 +6,13 @@ process merge_databases {
     path(database_2)
 
     output:
-    path("*fasta")
+    path("*_union_db.fasta"), emit: fasta
+    path("${params.virus_name}_union_headers.txt"), emit: headers
 
     script:
     """
-    merge_fastas.py ${database_1} ${database_2} ${params.virus_name}-full.fasta
+    merge_fastas.py ${database_1} ${database_2} ${params.virus_name}_union_db.fasta
+    grep ">" ${params.virus_name}_union_db.fasta | cut -c2- > ${params.virus_name}_union_headers.txt
     """
 }
 
@@ -211,22 +213,6 @@ process index_composite_reference {
     """
     bwa index -a bwtsw -b 10000000 ${composite_ref}
     """
-}
-
-process get_reference_headers {
-
-    input:
-    path(viral_reference)
-
-    output:
-    path("${ref_name}_headers.txt")
-
-    script:
-    ref_name = viral_reference.simpleName
-
-    """
-    grep ">" ${viral_reference} | cut -c2- > ${ref_name}_headers.txt
-    """    
 }
 
 process dehost_fastq {

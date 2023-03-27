@@ -39,6 +39,9 @@ process make_msa {
 }
 
 process extract_sample_genes { 
+    
+    errorStrategy 'ignore'
+
     publishDir "${params.outdir}/phylo/${custom_dir}", pattern: "*.fasta" , mode:'copy'
 
     input: 
