@@ -11,9 +11,9 @@ nextflow.enable.dsl = 2
 // include { pipeline_provenance } from './modules/provenance.nf'
 // include { collect_provenance } from './modules/provenance.nf'
 include { fastQC; fastq_check; run_quast; run_qualimap; run_custom_qc} from './modules/qc.nf'
-include { merge_databases; cutadapt; fastp; fastp_json_to_csv; run_kraken; kraken_filter } from './modules/prep.nf' 
-include { build_composite_reference; index_composite_reference ; get_reference_headers; dehost_fastq } from './modules/prep.nf'
-include { make_blast_database; extract_genes_blast; run_self_blast; run_blastn; filter_alignments; run_blastx; select_best_reference } from './modules/blast.nf'
+include { make_union_database; cutadapt; fastp; fastp_json_to_csv; run_kraken; kraken_filter } from './modules/prep.nf' 
+include { build_composite_reference; index_composite_reference ; dehost_fastq } from './modules/prep.nf'
+include { prep_database; make_blast_database; extract_genes_blast; run_self_blast; run_blastn; run_blastx; select_best_reference } from './modules/blast.nf'
 //include { p_make_blast_database; p_run_self_blast; p_run_blastn; p_filter_alignments; p_get_best_references; p_run_blastx } from './modules/p_blast.nf'
 include { assembly } from './modules/assembly.nf'
 include { create_bwa_index; create_fasta_index; map_reads; sort_filter_index_sam } from './modules/mapping.nf'
@@ -63,22 +63,23 @@ workflow genotyping {
 		ch_blastdb_fasta
 	main:
 		// GENOTYPE BLAST SEARCH
-		extract_genes_blast(ch_blastdb_fasta)
+		prep_database(ch_blastdb_fasta)
+		extract_genes_blast(prep_database.out)
 		make_blast_database(extract_genes_blast.out).first().set{ch_blastdb} // first() converts the channel from a consumable queue channel into an infinite single-value channel
-		run_blastn(ch_contigs, ch_blastdb)
+		// run_blastn(ch_contigs, ch_blastdb)
 
 		// Needed for blast score ratio
 		run_self_blast(ch_blastdb)
 
 		if (params.assemble){
-			filter_alignments(run_blastn.out.join(ch_contigs).combine(run_self_blast.out))
+			run_blastn(ch_contigs.join(ch_contigs).combine(run_self_blast.out), ch_blastdb)
 		} else {
-			filter_alignments(run_blastn.out.combine(ch_blastdb_fasta).combine(run_self_blast.out))
+			run_blastn(ch_contigs.combine(prep_database.out).combine(run_self_blast.out), ch_blastdb)
 		}
 
 	emit:
-		main = filter_alignments.out.main
-		filter = filter_alignments.out.filter
+		main = run_blastn.out.main
+		filter = run_blastn.out.filter
 		gene_db = extract_genes_blast.out
 }
 
@@ -88,24 +89,23 @@ workflow ptyping {
 		ch_blastdb_fasta
 	main:
 		// GENOTYPE BLAST SEARCH
-		extract_genes_blast(ch_blastdb_fasta)
+		prep_database(ch_blastdb_fasta)
+		extract_genes_blast(prep_database.out)
 		make_blast_database(extract_genes_blast.out).first().set{ch_blastdb} // first() converts the channel from a consumable queue channel into an infinite single-value channel
-		run_blastn(ch_contigs, ch_blastdb)
 
 		// Needed for blast score ratio
 		run_self_blast(ch_blastdb)
 
 		if (params.assemble){
-			filter_alignments(run_blastn.out.join(ch_contigs).combine(run_self_blast.out))
+			run_blastn(ch_contigs.join(ch_contigs).combine(run_self_blast.out), ch_blastdb)
 		} else {
-			filter_alignments(run_blastn.out.combine(ch_blastdb_fasta).combine(run_self_blast.out))
+			run_blastn(ch_contigs.combine(prep_database.out).combine(run_self_blast.out), ch_blastdb)
 		}
-		
-	emit:
-		main = filter_alignments.out.main
-		filter = filter_alignments.out.filter
-		gene_db = extract_genes_blast.out
 
+	emit:
+		main = run_blastn.out.main
+		filter = run_blastn.out.filter
+		gene_db = extract_genes_blast.out
 }
 
 workflow create_gtree {
@@ -161,14 +161,13 @@ workflow {
 
 	main:
 		//hash_files(ch_fastq_input.map{ it -> [it[0], [it[1], it[2]]] }.combine(Channel.of("fastq_input")))
-		
+
 		// UNION DATABASE
-		merge_databases(ch_blastdb_gtype_fasta, ch_blastdb_ptype_fasta).set{ch_union_db}
+		make_union_database(ch_blastdb_gtype_fasta, ch_blastdb_ptype_fasta)
 
 		// QUALITY CONTROL 
 		cutadapt(ch_fastq_input)
 		fastp(cutadapt.out.trimmed_reads)
-		// fastp(ch_fastq_input)
 		fastp_json_to_csv(fastp.out.json)
 		
 		fastQC(fastp.out.trimmed_reads)
@@ -180,12 +179,11 @@ workflow {
 		kraken_filter(fastp.out.trimmed_reads.join(run_kraken.out))
 		
 		// DEHOSTING
-		build_composite_reference(ch_human_ref.combine(ch_union_db))
+		build_composite_reference(ch_human_ref.combine(make_union_database.out.fasta))
 		index_composite_reference(build_composite_reference.out)
-		get_reference_headers(ch_union_db)
 		dehost_fastq(
 			kraken_filter.out,
-			get_reference_headers.out.first(), 
+			make_union_database.out.headers.first(), 
 			index_composite_reference.out.first()
 		) 
 
