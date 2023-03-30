@@ -39,6 +39,8 @@ process make_msa {
 }
 
 process extract_sample_genes { 
+
+	tag { sample_id }
     
     errorStrategy 'ignore'
 
