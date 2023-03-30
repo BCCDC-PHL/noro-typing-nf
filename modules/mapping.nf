@@ -38,6 +38,8 @@ process map_reads {
 
     tag {sample_id}
 
+    errorStrategy 'ignore'
+
 	label 'heavy'
 
     //publishDir "${params.outdir}/aligned_reads/sam", pattern: "${sample_id}.sam" , mode:'copy'
@@ -68,5 +70,25 @@ process sort_filter_index_sam {
 	"""
 	samtools view -f 3 -F 2828 -q 30 -h ${samfile} | samtools sort -o ${sample_id}.sorted.bam 
     samtools index ${sample_id}.sorted.bam 
+	"""
+}
+
+process merge_fasta_bam {
+
+	tag {sample_id}
+
+    publishDir "${params.outdir}/mapped_reads/merged", pattern: "*bam" , mode:'copy'
+    publishDir "${params.outdir}/mapped_reads/merged", pattern: "*fasta" , mode:'copy'
+
+    input: 
+    tuple val(sample_id),  path(references), path(bam_file), path(bam_index)
+
+    output:
+    tuple val(sample_id), path("${sample_id}*fasta"), path("${sample_id}*bam"), path("${sample_id}*bai"), emit: main
+    tuple val(sample_id), path("${sample_id}*bam"), path("${sample_id}*bai"), emit: bam
+    tuple val(sample_id), path("${sample_id}*fasta"), emit: ref
+
+	"""
+    merge_fasta_bam.py ${bam_file} ${references} --outbam ${sample_id}.merged.bam --outfasta ${sample_id}.ref.merged.fasta
 	"""
 }
