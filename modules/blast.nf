@@ -8,7 +8,7 @@ nextflow.enable.dsl=2
 import java.nio.file.Paths
 
 process prep_database {
-    storeDir "${projectDir}/cache/blast_db/${workflow}_full"
+    storeDir "${projectDir}/cache/blast_db/full_${workflow}"
     
     input:
     path(database)
@@ -28,7 +28,7 @@ process prep_database {
 }
 
 process extract_genes_blast {
-    storeDir "${projectDir}/cache/blast_db/${custom_dir}_gene"
+    storeDir "${projectDir}/cache/blast_db/gene_${custom_dir}"
     
     input:
     path(blast_db)
@@ -45,7 +45,7 @@ process extract_genes_blast {
 }
 
 process make_blast_database {
-    storeDir "${projectDir}/cache/blast_db/${custom_dir}_gene"
+    storeDir "${projectDir}/cache/blast_db/gene_${custom_dir}"
     
     input:
     path(fasta)
@@ -64,7 +64,7 @@ process make_blast_database {
 }
 
 process run_self_blast {
-    storeDir "${projectDir}/cache/blast_db/${custom_dir}_gene"
+    storeDir "${projectDir}/cache/blast_db/gene_${custom_dir}"
     
     input:
     path(blast_db)
@@ -74,6 +74,7 @@ process run_self_blast {
 
     script:
     db_name = blast_db[0]
+    custom_dir = task.ext.custom_dir ?: 'full_genome'
     outfile = "${db_name.simpleName}_ref_scores.tsv"
     workflow = task.ext.workflow ?: ''
     """
@@ -125,6 +126,8 @@ process run_blastn {
 process select_best_reference {
     
     tag {sample_id}
+
+    errorStrategy 'ignore'
 
     publishDir "${params.outdir}/blastn/final/", pattern: "${sample_id}*fasta" , mode:'copy'
 
