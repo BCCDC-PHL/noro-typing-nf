@@ -239,11 +239,11 @@ def main_sample(args):
 	# parse out the reference accession number from the query FASTA file 
 	accnos = qry_seq.id.split("|")[2].split("_")
 
-	if accnos[0] == 'NA' or accnos[1] == 'NA':
+	if (args.gene == 'vp1' and accnos[0] == 'NA') or (args.gene == 'rdrp' and accnos[1] == 'NA'):
 		print("ERROR: Sequence failed in an earlier BLAST step. No reference accession found.")
 		sys.exit(1)
 
-	# adaptive search for the correct reference sequence (avoids need for an extra parameter)
+	# adaptive search for the correct reference sequence 
 	ref_seq = None
 
 	# this section can be expanded if more genes are desired
