@@ -59,7 +59,7 @@ process sort_filter_index_sam {
 
 	tag {sample_id}
 
-    publishDir "${params.outdir}/mapped_reads/sorted", pattern: "${sample_id}.sorted.bam" , mode:'copy'
+    publishDir "${params.outdir}/mapped_reads/sorted", pattern: "${sample_id}.sorted.bam"
 
     input: 
     tuple val(sample_id), path(samfile)
@@ -77,7 +77,7 @@ process merge_fasta_bam {
 
 	tag {sample_id}
 
-    publishDir "${params.outdir}/mapped_reads/merged", pattern: "*bam" , mode:'copy'
+    publishDir "${params.outdir}/mapped_reads/merged", pattern: "*bam"
     publishDir "${params.outdir}/mapped_reads/merged", pattern: "*fasta" , mode:'copy'
 
     input: 

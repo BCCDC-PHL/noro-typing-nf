@@ -20,7 +20,7 @@ process fastp {
 
     tag { sample_id }
 
-    publishDir "${params.outdir}/preprocess/fastp", pattern: "${sample_id}*_R{1,2}.trim.fastq.gz" , mode:'copy'
+    publishDir "${params.outdir}/preprocess/fastp", pattern: "${sample_id}*_R{1,2}.trim.fastq.gz" 
     publishDir "${params.outdir}/preprocess/fastp/html", pattern: "${sample_id}*html" , mode:'copy'
 
     input:
@@ -68,7 +68,7 @@ process cutadapt {
 
     tag { sample_id }
 
-    publishDir "${params.outdir}/preprocess/cutadapt", pattern: "${sample_id}_R{1,2}.trimmed.fastq.gz", mode:'copy'
+    publishDir "${params.outdir}/preprocess/cutadapt", pattern: "${sample_id}_R{1,2}.trimmed.fastq.gz"
     publishDir "${params.outdir}/preprocess/cutadapt/logs", pattern: "*cutadapt.log", mode:'copy'
 
     input:
@@ -111,7 +111,8 @@ process run_kraken {
     tuple val(sample_id), path(reads_1), path(reads_2)
 
     output:
-    tuple val(sample_id), path("${sample_id}.kraken.report"), path("${sample_id}.kraken.out")
+    tuple val(sample_id), path("${sample_id}.kraken.report"), path("${sample_id}.kraken.out"), emit: main
+    path("${sample_id}.kraken.report"), emit: report
 
     """
     kraken2 --confidence 0.1 \
@@ -127,23 +128,23 @@ process kraken_filter {
 
     conda "${projectDir}/environments/kraken.yaml"
 
-    publishDir path: "${params.outdir}/filtering/kraken/filtered", pattern: "${sample_id}*fastq.gz", mode: "copy"
+    publishDir path: "${params.outdir}/filtering/kraken/filtered", pattern: "${sample_id}*fastq.gz"
 
     input:
     tuple val(sample_id), path(reads_1), path(reads_2), path(kraken_report), path(kraken_out)
 
     output:
-    tuple val(sample_id), path("${sample_id}_R1.kfilter.fastq.gz"), path("${sample_id}_R2.kfilter.fastq.gz"), emit: filtered
+    tuple val(sample_id), path("${sample_id}_R1.kfilter.fastq.gz"), path("${sample_id}_R2.kfilter.fastq.gz"), emit: fastq
 
     script:
     """
     # Extract the norovirus specific reads 
     # will exclude anything not under Norovirus clade; including human reads 
-    extract_kraken_reads.py \
+    extract_kraken_reads.py  --fastq-output \
     -k ${sample_id}.kraken.out -r ${sample_id}.kraken.report \
     -1 ${reads_1} -2 ${reads_2} \
     -o ${sample_id}_R1.kfilter.fastq -o2 ${sample_id}_R2.kfilter.fastq \
-    -t ${params.krk_norovirus_id} --include-children &&
+    -t ${params.krk_norovirus_id} 0 --include-children &&
     gzip -c ${sample_id}_R1.kfilter.fastq > ${sample_id}_R1.kfilter.fastq.gz &&
     gzip -c ${sample_id}_R2.kfilter.fastq > ${sample_id}_R2.kfilter.fastq.gz
     """
@@ -221,8 +222,8 @@ process dehost_fastq {
 
     tag {sample_id}
 
-    publishDir path: "${params.outdir}/dehosted/", pattern: "${sample_id}*fastq.gz", mode: "copy"
-    publishDir path: "${params.outdir}/dehosted/bam", pattern: "${sample_id}*bam", mode: "copy"
+    publishDir path: "${params.outdir}/dehosted/", pattern: "${sample_id}*fastq.gz"
+    publishDir path: "${params.outdir}/dehosted/bam", pattern: "${sample_id}*bam"
     publishDir path: "${params.outdir}/dehosted/metrics", pattern: "${sample_id}*_metrics.txt", mode: "copy"
 
     input:
