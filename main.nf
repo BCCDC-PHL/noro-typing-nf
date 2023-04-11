@@ -176,13 +176,13 @@ workflow {
 		
 		// KRAKEN FILTERING
 		run_kraken(fastp.out.trimmed_reads)
-		// kraken_filter(fastp.out.trimmed_reads.join(run_kraken.out))
+		kraken_filter(fastp.out.trimmed_reads.join(run_kraken.out.main))
 		
 		// DEHOSTING
 		build_composite_reference(ch_human_ref.combine(make_union_database.out.fasta))
 		index_composite_reference(build_composite_reference.out)
 		dehost_fastq(
-			fastp.out.trimmed_reads,
+			kraken_filter.out.fastq,
 			make_union_database.out.headers.first(), 
 			index_composite_reference.out.first()
 		) 
@@ -241,11 +241,12 @@ workflow {
 
 		// Collect all the relevant files for MULTIQC
 		ch_multiqc_inputs = Channel.empty()
-		ch_multiqc_inputs.mix(fastQC.out.zip.map{ it -> [it[1], it[2]]}.collect()).set{ch_multiqc_inputs}
-		ch_multiqc_inputs.mix(cutadapt.out.log).set{ch_multiqc_inputs}
-		ch_multiqc_inputs.mix(run_quast.out.tsv).set{ch_multiqc_inputs}
-		ch_multiqc_inputs.mix(fastp.out.json.map{it -> it[1]}).set{ch_multiqc_inputs}
-		ch_multiqc_inputs.mix(run_qualimap.out.main).set{ch_multiqc_inputs}
+		ch_multiqc_inputs = ch_multiqc_inputs.mix(fastQC.out.zip.map{ it -> [it[1], it[2]]}.collect())
+		ch_multiqc_inputs = ch_multiqc_inputs.mix(cutadapt.out.log)
+		ch_multiqc_inputs = ch_multiqc_inputs.mix(run_kraken.out.report)
+		ch_multiqc_inputs = ch_multiqc_inputs.mix(run_quast.out.tsv)
+		ch_multiqc_inputs = ch_multiqc_inputs.mix(fastp.out.json.map{it -> it[1]})
+		ch_multiqc_inputs = ch_multiqc_inputs.mix(run_qualimap.out.main)
 		multiqc(ch_multiqc_inputs.collect().ifEmpty([]) )
 
 		// ch_provenance = FluViewer.out.provenance
