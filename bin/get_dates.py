@@ -8,8 +8,6 @@ from datetime import datetime as dt
 import argparse
 import re
 
-Entrez.email = 'john.palmer1288@gmail.com'
-
 #%%
 def init_parser():
 	parser = argparse.ArgumentParser()
