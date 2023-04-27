@@ -68,6 +68,8 @@ process run_qualimap {
     
     tag { sample_id }
 
+    errorStrategy 'ignore'
+
     conda 'qualimap'
     
     publishDir path: "${params.outdir}/qc/mapping/pdf", pattern: "${sample_id}*pdf", mode: "copy"

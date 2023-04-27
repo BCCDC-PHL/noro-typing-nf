@@ -19,7 +19,7 @@ def get_parser():
 	parser.add_argument('-i','--min_id', default=90, type=int, help='Minimum nucleotide sequence identity between database reference sequence and contig (percentage, default = 90)')
 	return parser
 
-def parse_blast(filepath, ref_score_path):
+def parse_blast(filepath, ref_scores):
 	cols = 'qseqid sseqid pident qlen slen nident bitscore rawscore'.split()
 	blast_df = pd.read_csv(filepath, sep='\t', names=cols)
 
@@ -34,10 +34,10 @@ def parse_blast(filepath, ref_score_path):
 		blast_df['prop_covered'] = blast_df['nident'] * 100 / blast_df['slen']
 		
 		# BLAST SCORE RATIOS 
-		ref_scores = pd.read_csv(ref_score_path, sep='\t')
-		colnames = ref_scores.columns
-		blast_df = blast_df.merge(ref_scores, left_on='sseqid', right_on=colnames[0]).drop(colnames[0],axis=1)
-		blast_df['bsr'] = blast_df['rawscore'] * 100 / blast_df[colnames[1]]
+		if ref_scores:
+			colnames = ref_scores.columns
+			blast_df = blast_df.merge(ref_scores, left_on='sseqid', right_on=colnames[0]).drop(colnames[0],axis=1)
+			blast_df['bsr'] = blast_df['rawscore'] * 100 / blast_df[colnames[1]]
 
 		# add name column to the blast results 
 		sample_name = os.path.basename(filepath).split("_")[0]
@@ -46,9 +46,9 @@ def parse_blast(filepath, ref_score_path):
 
 	except Exception as e:
 		print(str(e))
-		print("ERROR: Failed to filter BLAST outputs (error above). Creating empty output files.")
-		final_cols = ['sample_name'] + cols + 'genotype strain prop_covered refscore bsr'.split()
-		return pd.DataFrame(columns=final_cols)
+		print("ERROR: Failed to filter BLAST outputs (error above). Creating empty output files.",file=sys.stderr)
+		# final_cols = ['sample_name'] + cols + 'genotype strain prop_covered refscore bsr'.split()
+		return None
 
 #%%
 def filter_alignments(blast_results, score_column, min_cov, min_id):
@@ -142,11 +142,16 @@ def main():
 	parser = get_parser()
 	args = parser.parse_args()
 
-	blast_df = parse_blast(args.blastn, args.ref_scores)
+	if args.ref_scores:
+		ref_scores = pd.read_csv(args.ref_scores, sep='\t')
+	else:
+		ref_scores = None
+
+	blast_df = parse_blast(args.blastn, ref_scores)
 
 	if blast_df.shape[0] == 0:
-		print("WARNING: No data found in blast input file. Exiting with empty outputs.")
-		verbose_df = pd.DataFrame(columns=blast_df.columns)
+		print("WARNING: No data found in blast input file. Exiting.", file=sys.stderr)
+		# verbose_df = pd.DataFrame(columns=blast_df.columns)
 
 	else:
 		blast_df, verbose_df = filter_alignments(blast_df, args.metric, args.min_cov, args.min_id)

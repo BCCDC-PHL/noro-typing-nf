@@ -16,7 +16,7 @@ include { build_composite_reference; index_composite_reference ; dehost_fastq } 
 include { prep_database; make_blast_database; extract_genes_blast; run_self_blast; run_blastn; run_blastx; select_best_reference } from './modules/blast.nf'
 //include { p_make_blast_database; p_run_self_blast; p_run_blastn; p_filter_alignments; p_get_best_references; p_run_blastx } from './modules/p_blast.nf'
 include { assembly } from './modules/assembly.nf'
-include { create_bwa_index; create_fasta_index; map_reads; sort_filter_index_sam } from './modules/mapping.nf'
+include { create_bwa_index; create_fasta_index; map_reads; sort_filter_index_sam; merge_fasta_bam} from './modules/mapping.nf'
 include { run_freebayes; run_mpileup ; get_common_snps } from './modules/variant_calling.nf'
 include { get_coverage; plot_coverage; make_pileup} from "./modules/coverage.nf"
 include { mask_low_coverage; make_consensus } from './modules/consensus.nf'
@@ -176,13 +176,13 @@ workflow {
 		
 		// KRAKEN FILTERING
 		run_kraken(fastp.out.trimmed_reads)
-		kraken_filter(fastp.out.trimmed_reads.join(run_kraken.out))
+		kraken_filter(fastp.out.trimmed_reads.join(run_kraken.out.main))
 		
 		// DEHOSTING
 		build_composite_reference(ch_human_ref.combine(make_union_database.out.fasta))
 		index_composite_reference(build_composite_reference.out)
 		dehost_fastq(
-			kraken_filter.out,
+			kraken_filter.out.fastq,
 			make_union_database.out.headers.first(), 
 			index_composite_reference.out.first()
 		) 
@@ -206,31 +206,33 @@ workflow {
 		create_bwa_index(select_best_reference.out.ref)
 
 		// READ MAPPING, SORTING, FILTERING
-		map_reads(fastp.out.trimmed_reads.join(create_bwa_index.out))
+		map_reads(dehost_fastq.out.fastq.join(create_bwa_index.out))
 		sort_filter_index_sam(map_reads.out)
 
-		make_pileup(select_best_reference.out.ref.join(sort_filter_index_sam.out))
+		merge_fasta_bam(select_best_reference.out.ref.join(sort_filter_index_sam.out))
+
+		make_pileup(merge_fasta_bam.out.main)
 		//create_pileup.out.metrics.collectFile(name: "${params.outdir}/qc/pileups", keepHeader: true, skip: 1)
-		run_qualimap(sort_filter_index_sam.out)
+		run_qualimap(merge_fasta_bam.out.bam)
 
 		// PLOT COVERAGE
-		get_coverage(sort_filter_index_sam.out)
+		get_coverage(merge_fasta_bam.out.bam)
 		plot_coverage(get_coverage.out.coverage_file)
 
 		// VARIANT CALLING
-		create_fasta_index(select_best_reference.out.ref)
-		run_freebayes(sort_filter_index_sam.out.join(create_fasta_index.out))
-		run_mpileup(sort_filter_index_sam.out.join(create_fasta_index.out))
+		create_fasta_index(merge_fasta_bam.out.ref)
+		run_freebayes(merge_fasta_bam.out.bam.join(create_fasta_index.out))
+		run_mpileup(merge_fasta_bam.out.bam.join(create_fasta_index.out))
 		get_common_snps(run_freebayes.out.join(run_mpileup.out))
 		
 		// CONSENSUS GENERATION 
-		mask_low_coverage(sort_filter_index_sam.out)
-		make_consensus(get_common_snps.out.join(select_best_reference.out.ref).join(mask_low_coverage.out))
+		mask_low_coverage(merge_fasta_bam.out.bam)
+		make_consensus(get_common_snps.out.join(merge_fasta_bam.out.ref).join(mask_low_coverage.out))
 
 		create_gtree(make_consensus.out, genotyping.out.gene_db)
 		create_ptree(make_consensus.out, ptyping.out.gene_db)
 
-		run_custom_qc(sort_filter_index_sam.out.join(select_best_reference.out.ref).join(make_consensus.out))
+		run_custom_qc(merge_fasta_bam.out.bam.join(merge_fasta_bam.out.ref).join(make_consensus.out))
 		run_custom_qc.out.csv.collectFile(name: "${params.outdir}/qc/custom/qc_all.csv", keepHeader: true, skip: 1)
 
 		make_multifasta(make_consensus.out.map{it -> it[1]}.collect())
@@ -239,11 +241,12 @@ workflow {
 
 		// Collect all the relevant files for MULTIQC
 		ch_multiqc_inputs = Channel.empty()
-		ch_multiqc_inputs.mix(fastQC.out.zip.map{ it -> [it[1], it[2]]}.collect()).set{ch_multiqc_inputs}
-		ch_multiqc_inputs.mix(cutadapt.out.log).set{ch_multiqc_inputs}
-		ch_multiqc_inputs.mix(run_quast.out.tsv).set{ch_multiqc_inputs}
-		ch_multiqc_inputs.mix(fastp.out.json.map{it -> it[1]}).set{ch_multiqc_inputs}
-		ch_multiqc_inputs.mix(run_qualimap.out.main).set{ch_multiqc_inputs}
+		ch_multiqc_inputs = ch_multiqc_inputs.mix(fastQC.out.zip.map{ it -> [it[1], it[2]]}.collect())
+		ch_multiqc_inputs = ch_multiqc_inputs.mix(cutadapt.out.log)
+		ch_multiqc_inputs = ch_multiqc_inputs.mix(run_kraken.out.report)
+		ch_multiqc_inputs = ch_multiqc_inputs.mix(run_quast.out.tsv)
+		ch_multiqc_inputs = ch_multiqc_inputs.mix(fastp.out.json.map{it -> it[1]})
+		ch_multiqc_inputs = ch_multiqc_inputs.mix(run_qualimap.out.main)
 		multiqc(ch_multiqc_inputs.collect().ifEmpty([]) )
 
 		// ch_provenance = FluViewer.out.provenance

@@ -65,7 +65,7 @@ def extract_gene_by_position(aligner, ref, query, gene_pos, debug):
 	ref_aligned, qry_aligned = next(align_iter)
 
 	# Generate necessary alignment dictionaries to translate coordinates 
-	align_dict, _ = make_align_dict(ref_aligned, qry_aligned)
+	align_dict, query_dict = make_align_dict(ref_aligned, qry_aligned)
 
 	# STEP 1 - USE ALIGNMENT DICT TO TRANSLATE FROM REF POS TO ALIGNMENT POS
 	align_start = align_dict[gene_pos[0]-1]
@@ -74,8 +74,9 @@ def extract_gene_by_position(aligner, ref, query, gene_pos, debug):
 	print(query.id)
 	print(f"Reference Length: {len(ref)}")
 	print(f"Query Length: {len(query)}")
-	print(f"Start: {align_start}")
-	print(f"End: {align_end}")
+
+
+
 
 	# formulate the final gene extracted from the query 
 	outseq = qry_aligned[align_start: align_end].replace("-","")
@@ -90,10 +91,17 @@ def extract_gene_by_position(aligner, ref, query, gene_pos, debug):
 		print(ref_aligned[align_start: align_end+1])
 		print("QUERY:")
 		print(qry_aligned[align_start: align_end+1])
+		print(f"Alignment Position Start: {align_start}")
+		print(f"Alignment Position End: {align_end}")
+		print(f"Query Position Start: {query_dict[align_start]}")
+		print(f"Query Position End: {query_dict[align_end]}")
+		print("TEST")
+		print(query.seq[query_dict[align_start]:query_dict[align_end]])
+		print(outseq)
 		print("REFERENCE:")
 		print(translate_nuc(ref_aligned[align_start: align_end+1],0))
 		print("QUERY:")
-		print(translate_nuc(qry_aligned[align_start: align_end+1],0))
+		print(translate_nuc(qry_aligned[align_start: align_end+1].replace("-",""),0))
 		print(f"Output Length: {len(outseq)} % 3 == {len(outseq) % 3}")
 
 	outrecord = SeqIO.SeqRecord(
@@ -239,11 +247,11 @@ def main_sample(args):
 	# parse out the reference accession number from the query FASTA file 
 	accnos = qry_seq.id.split("|")[2].split("_")
 
-	if accnos[0] == 'NA' or accnos[1] == 'NA':
+	if (args.gene == 'vp1' and accnos[0] == 'NA') or (args.gene == 'rdrp' and accnos[1] == 'NA'):
 		print("ERROR: Sequence failed in an earlier BLAST step. No reference accession found.")
 		sys.exit(1)
 
-	# adaptive search for the correct reference sequence (avoids need for an extra parameter)
+	# adaptive search for the correct reference sequence 
 	ref_seq = None
 
 	# this section can be expanded if more genes are desired
