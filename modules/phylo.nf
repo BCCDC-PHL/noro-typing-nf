@@ -39,6 +39,8 @@ process make_msa {
 }
 
 process extract_sample_genes { 
+
+	tag { sample_id }
     
     errorStrategy 'ignore'
 
@@ -96,7 +98,7 @@ process make_tree {
     alignment = infiles.size() == 2 ? infiles[0] : infiles
     dates = infiles.size() == 2 ? "--date ${infiles[1]}" : ''
 	"""
-    iqtree -T ${task.cpus} -m GTR -s ${alignment} ${dates} --prefix ${params.run_name}_${workflow}
+    iqtree -T ${task.cpus} -m GTR -s ${alignment} --date ${dates} --prefix ${params.run_name}_${workflow}
     mkdir -p ${params.run_name}_iqtree
     mv ${params.run_name}_${workflow}* ${params.run_name}_iqtree
     cp ${params.run_name}_iqtree/${params.run_name}_${workflow}.treefile ./${params.run_name}_${workflow}.nwk
