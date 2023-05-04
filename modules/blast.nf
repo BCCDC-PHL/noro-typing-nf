@@ -122,8 +122,48 @@ process run_blastn {
     """
 }
 
+process find_reference {
 
-process select_best_reference {
+    errorStrategy 'ignore'
+
+    label 'medium'
+
+    tag {sample_id}
+
+    publishDir "${params.outdir}/blastn/${workflow}/raw", pattern: "${sample_id}*blastn.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow}/filtered", pattern: "${sample_id}*filter.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow}/full", pattern: "${sample_id}*full.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow}/final_refs", pattern: "${sample_id}*fasta" , mode:'copy'
+
+    input: 
+    tuple val(sample_id), path(contig_file)
+
+    output:
+    tuple val(sample_id), path("${sample_id}*blastn.tsv"), emit: raw
+    tuple val(sample_id), path("${sample_id}*filter.tsv"), path("${sample_id}*fasta"), emit: main
+    tuple val(sample_id), path("${sample_id}*full.tsv"), emit: full
+    tuple val(sample_id), path("${sample_id}*_ref.fasta"), emit: ref
+    path("${sample_id}*filter.tsv"), emit: filter
+
+    script:
+    contig_mode = params.assemble ? "--contig_mode" : "" 
+    workflow = task.ext.workflow ?: ''
+
+    """
+    blastn -num_threads ${task.cpus} -query ${contig_file} -db ${params.reference_database} -outfmt "6 ${params.blast_outfmt}" > ${sample_id}_${workflow}_blastn.tsv &&
+    filter_alignments.py ${sample_id}_${workflow}_blastn.tsv \
+    --metric prop_covered \
+    ${contig_mode} \
+    --seqs ${params.fullref_large} \
+    --min_id ${params.min_blast_id} \
+    --tsv_out ${sample_id}_${workflow}_blastn_filter.tsv \
+    --fasta_out ${sample_id}_${workflow}_ref.fasta 
+    """
+}
+
+
+
+process combine_references {
     
     tag {sample_id}
 
@@ -140,7 +180,7 @@ process select_best_reference {
 
     script: 
     """
-    select_best_reference.py \
+    combine_references.py \
     -g ${gtype_blast} \
     -p ${ptype_blast} \
     -G ${gtype_ref} \
