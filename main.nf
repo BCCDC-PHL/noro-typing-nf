@@ -20,7 +20,7 @@ include { create_bwa_index; create_fasta_index; map_reads; sort_filter_index_sam
 include { run_freebayes; run_mpileup ; get_common_snps } from './modules/variant_calling.nf'
 include { get_coverage; plot_coverage; make_pileup} from "./modules/coverage.nf"
 include { mask_low_coverage; make_consensus } from './modules/consensus.nf'
-include { make_multifasta; make_msa; make_dates_file; make_tree; extract_sample_genes} from './modules/phylo.nf'
+include { make_multifasta; get_background_sequences; make_msa; make_dates_file; make_tree; extract_sample_genes} from './modules/phylo.nf'
 include { multiqc } from './modules/multiqc.nf'
 
 println "HELLO. STARTING NOROVIRUS METAGENOMICS PIPELINE."
@@ -115,7 +115,14 @@ workflow create_gtree {
 
 	main:
 		extract_sample_genes(ch_consensus_fasta.combine(ch_gene_database_fasta))
-		make_multifasta(ch_gene_database_fasta.mix(extract_sample_genes.out).collect())
+		ch_sequences = ch_gene_database_fasta.mix(extract_sample_genes.out)
+
+		if (params.results_path){
+			get_background_sequences(Channel.fromPath(params.results_path))
+			ch_sequences = ch_sequences.mix(get_background_sequences.out)
+		} 
+
+		make_multifasta(ch_sequences.collect())
 		make_dates_file(make_multifasta.out)
 		make_msa(make_multifasta.out)
 		make_tree(make_msa.out.combine(make_dates_file.out))
@@ -133,6 +140,13 @@ workflow create_ptree {
 
 	main:
 		extract_sample_genes(ch_consensus_fasta.combine(ch_gene_database_fasta))
+		ch_sequences = ch_gene_database_fasta.mix(extract_sample_genes.out)
+
+		if (params.results_path){
+			get_background_sequences(Channel.fromPath(params.results_path))
+			ch_sequences = ch_sequences.mix(get_background_sequences.out)
+		} 
+
 		make_multifasta(ch_gene_database_fasta.mix(extract_sample_genes.out).collect())
 		make_dates_file(make_multifasta.out)
 		make_msa(make_multifasta.out)
@@ -235,7 +249,14 @@ workflow {
 		run_custom_qc(merge_fasta_bam.out.bam.join(merge_fasta_bam.out.ref).join(make_consensus.out))
 		run_custom_qc.out.csv.collectFile(name: "${params.outdir}/qc/custom/qc_all.csv", keepHeader: true, skip: 1)
 
-		make_multifasta(make_consensus.out.map{it -> it[1]}.collect())
+		ch_sequences = make_consensus.out.map{it -> it[1]}
+
+		if (params.results_path){
+			get_background_sequences(Channel.fromPath(params.results_path))
+			ch_sequences = ch_sequences.mix(get_background_sequences.out)
+		} 
+
+		make_multifasta(ch_sequences.collect())
 		make_msa(make_multifasta.out)
 		make_tree(make_msa.out)
 

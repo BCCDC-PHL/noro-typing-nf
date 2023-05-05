@@ -1,11 +1,11 @@
 process make_multifasta {
-    publishDir "${params.outdir}/phylo/${custom_dir}/align", pattern: "*fasta" , mode:'copy'
+    publishDir "${params.outdir}/phylo/${custom_dir}/sequences", pattern: "*fasta" , mode:'copy'
 
     input: 
 	path(sequences)
 
     output:
-    path("${params.run_name}_${workflow}.multi.fasta")
+    path("${params.run_name}_${workflow}_multi.fasta")
 
     script:
     custom_dir = task.ext.custom_dir ?: 'full_genome'
@@ -13,10 +13,27 @@ process make_multifasta {
     
 	"""
 	cat ${sequences} > temp.fasta
-    filter_fasta.py temp.fasta ${params.run_name}_${workflow}.multi.fasta
+    filter_fasta.py temp.fasta ${params.run_name}_${workflow}_multi.fasta
     rm temp.fasta
 	"""
 
+}
+process get_background_sequences {
+    publishDir "${params.outdir}/phylo/${custom_dir}/sequences", pattern: "*fasta" , mode:'copy'
+
+    input: 
+	path(results_path)
+
+    output:
+    path("${params.run_name}_${custom_dir}_bg.fasta")
+
+    script:
+    custom_dir = task.ext.custom_dir ?: 'full'
+    workflow = task.ext.workflow ?: 'NONE'
+    
+	"""
+    get_background_seqs.py --gene ${custom_dir} --outfasta ${params.run_name}_${custom_dir}_bg.fasta ${results_path}
+	"""
 }
 
 process make_msa {
@@ -98,7 +115,7 @@ process make_tree {
     alignment = infiles.size() == 2 ? infiles[0] : infiles
     dates = infiles.size() == 2 ? "--date ${infiles[1]}" : ''
 	"""
-    iqtree -T ${task.cpus} -m GTR -s ${alignment} --date ${dates} --prefix ${params.run_name}_${workflow}
+    iqtree -T ${task.cpus} -m GTR -s ${alignment} ${dates} --prefix ${params.run_name}_${workflow}
     mkdir -p ${params.run_name}_iqtree
     mv ${params.run_name}_${workflow}* ${params.run_name}_iqtree
     cp ${params.run_name}_iqtree/${params.run_name}_${workflow}.treefile ./${params.run_name}_${workflow}.nwk
