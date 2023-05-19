@@ -55,7 +55,7 @@ process make_blast_database {
 
     script:
     workflow = task.ext.workflow ?: ''
-    db_name = "${workflow}_blastdb.fasta"
+    db_name = task.ext.workflow ? "${workflow}_blastdb.fasta" : "reference_db.fasta"
 
     """
     makeblastdb -dbtype nucl -in ${fasta} -out ${db_name}
@@ -85,6 +85,8 @@ process run_self_blast {
 }
 
 process run_blastn {
+
+    errorStrategy 'ignore'
 
     label 'medium'
 
@@ -137,6 +139,7 @@ process find_reference {
 
     input: 
     tuple val(sample_id), path(contig_file)
+    path(reference_database)
 
     output:
     tuple val(sample_id), path("${sample_id}*blastn.tsv"), emit: raw
@@ -150,14 +153,14 @@ process find_reference {
     workflow = task.ext.workflow ?: ''
 
     """
-    blastn -num_threads ${task.cpus} -query ${contig_file} -db ${params.reference_database} -outfmt "6 ${params.blast_outfmt}" > ${sample_id}_${workflow}_blastn.tsv &&
+    blastn -num_threads ${task.cpus} -query ${contig_file} -db ${reference_database[0]} -outfmt "6 ${params.blast_outfmt}" > ${sample_id}_${workflow}_blastn.tsv &&
     filter_alignments.py ${sample_id}_${workflow}_blastn.tsv \
     --metric prop_covered \
     ${contig_mode} \
-    --seqs ${params.fullref_large} \
+    --seqs ${reference_database[0]} \
     --min_id ${params.min_blast_id} \
-    --tsv_out ${sample_id}_${workflow}_blastn_filter.tsv \
-    --fasta_out ${sample_id}_${workflow}_ref.fasta 
+    --tsv_out ${sample_id}_db_blastn_filter.tsv \
+    --fasta_out ${sample_id}_db_ref.fasta 
     """
 }
 
