@@ -159,6 +159,7 @@ workflow {
 	ch_blastdb_ptype_fasta = Channel.from(params.ptype_database)
 
 
+
 	ch_fastq_input = Channel.fromFilePairs( params.fastq_search_path, flat: true ).map{ it -> [it[0].split('_')[0], it[1], it[2]] }.unique{ it -> it[0] }
 
 	main:
@@ -206,8 +207,9 @@ workflow {
 
 		// Use large database to find reference
 		if (params.reference_database){
+			make_blast_database(Channel.from(params.reference_database)).first().set{ch_reference_database}
 			// SEARCH REFERENCE DB 
-			find_reference(assembly.out)
+			find_reference(assembly.out, ch_reference_database)
 
 			// SINGLE REFERENCE MAPPING 
 			create_bwa_index(find_reference.out.ref)
