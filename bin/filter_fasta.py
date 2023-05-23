@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import os, sys
 from Bio import SeqIO
+from Bio.Seq import Seq
 import argparse
+import re
 
 def init_parser():
 	parser = argparse.ArgumentParser()
@@ -36,12 +38,19 @@ def rename(seq, header_delim, accno_pos, type_pos):
 
 	return seq
 
+def remove_ambi(seqs):
+	ambi = re.compile('[WRKYSMBDHV]')
+	for s in seqs:
+		s.seq = Seq(ambi.sub("N", str(s.seq)))
+	return seqs
+
 def main():
 	parser = init_parser()
 	args = parser.parse_args()
 	seqs = list(SeqIO.parse(args.fasta, 'fasta'))
 
 	seqs, removed = N_filter(seqs, args.min_prop_n)
+	# seqs = remove_ambi(seqs)
 	seqs = list(map(lambda x: rename(x, args.header_delim, args.header_pos_accno, args.header_pos_type), seqs))
 
 	if not args.output:

@@ -132,6 +132,7 @@ process run_mapping_qc {
 }
 
 process run_custom_qc {
+    errorStrategy 'ignore'
     tag { sample_id }
 
     publishDir "${params.outdir}/qc/custom/csv", pattern: "${sample_id}*csv", mode: 'copy'
