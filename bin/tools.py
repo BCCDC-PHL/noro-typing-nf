@@ -4,6 +4,7 @@ import pysam
 from collections import defaultdict
 import re
 import numpy as np
+from Bio import Align
 
 
 #%%
@@ -204,6 +205,15 @@ def flex_translate(nt_seq):
 		min_frame = 1 if min_frame == 2 else 2
 
 	return best_seq, min_count, min_frame
+
+def init_aligner(mode='global', open_gap=-1.0, x_gap=-0.1):
+	aligner = Align.PairwiseAligner()
+	aligner.mode = mode
+	aligner.open_gap_score = open_gap
+	aligner.extend_gap_score = x_gap
+	aligner.target_end_gap_score = 0.0
+	aligner.query_end_gap_score = 0.0
+	return aligner
 
 
 def make_align_dict(ref, qry):
