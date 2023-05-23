@@ -45,7 +45,7 @@ process extract_genes_blast {
 }
 
 process make_blast_database {
-    storeDir "${projectDir}/cache/blast_db/gene_${custom_dir}"
+    storeDir "${projectDir}/cache/blast_db/${custom_dir}"
     
     input:
     path(fasta)
@@ -55,7 +55,8 @@ process make_blast_database {
 
     script:
     workflow = task.ext.workflow ?: ''
-    db_name = "${workflow}_blastdb.fasta"
+    custom_dir = task.ext.custom_dir ?: 'full'
+    db_name = task.ext.workflow ? "${workflow}_blastdb.fasta" : "reference_db.fasta"
 
     """
     makeblastdb -dbtype nucl -in ${fasta} -out ${db_name}
@@ -86,44 +87,50 @@ process run_self_blast {
 
 process run_blastn {
 
+    errorStrategy 'ignore'
+
     label 'medium'
 
     tag {sample_id}
 
-    publishDir "${params.outdir}/blastn/${workflow}/raw", pattern: "${sample_id}*blastn.tsv" , mode:'copy'
-    publishDir "${params.outdir}/blastn/${workflow}/filtered", pattern: "${sample_id}*filter.tsv" , mode:'copy'
-    publishDir "${params.outdir}/blastn/${workflow}/full", pattern: "${sample_id}*full.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow}/blast_raw", pattern: "${sample_id}*blastn.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow}/blast_filtered", pattern: "${sample_id}*filter.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow}/blast_full", pattern: "${sample_id}*full.tsv" , mode:'copy'
     publishDir "${params.outdir}/blastn/${workflow}/final_refs", pattern: "${sample_id}*fasta" , mode:'copy'
 
     input: 
-    tuple val(sample_id), path(contig_file), path(reference_fasta), path(self_blast_scores)
-    path(blast_db)
+    tuple val(sample_id), path(contig_file), path(sequence_source)          // 1) Name  2) Assembled contigs  3) FASTA file where the final output sequences are stored
+    path(blast_db)                                                          // BLAST database used to search for best matching reference 
+    path(self_blast_scores)
 
     output:
     tuple val(sample_id), path("${sample_id}*blastn.tsv"), emit: raw
     tuple val(sample_id), path("${sample_id}*filter.tsv"), path("${sample_id}*fasta"), emit: main
     tuple val(sample_id), path("${sample_id}*full.tsv"), emit: full
+    tuple val(sample_id), path("${sample_id}*_ref.fasta"), emit: ref
     path("${sample_id}*filter.tsv"), emit: filter
 
     script:
     contig_mode = params.assemble ? "--contig_mode" : "" 
-    workflow = task.ext.workflow ?: ''
+    workflow = task.ext.workflow ?: 'full'
     blast_db_name = blast_db[0]
+    self_blast = self_blast_scores.name != 'NO_FILE' ? "--ref_scores ${self_blast_scores}" : ''
+    blast_metric = workflow == 'full' ? params.blast_refsearch_metric : params.blast_typing_metric
+    
     """
     blastn -num_threads ${task.cpus} -query ${contig_file} -db ${blast_db_name} -outfmt "6 ${params.blast_outfmt}" > ${sample_id}_${workflow}_blastn.tsv &&
     filter_alignments.py ${sample_id}_${workflow}_blastn.tsv \
-    --metric prop_covered \
+    --metric ${blast_metric} \
     ${contig_mode} \
-    --seqs ${reference_fasta} \
-    --ref_scores ${self_blast_scores} \
+    ${self_blast} \
+    --seqs ${sequence_source} \
     --min_id ${params.min_blast_id} \
     --tsv_out ${sample_id}_${workflow}_blastn_filter.tsv \
     --fasta_out ${sample_id}_${workflow}_ref.fasta 
     """
 }
 
-
-process select_best_reference {
+process combine_references {
     
     tag {sample_id}
 
@@ -140,7 +147,7 @@ process select_best_reference {
 
     script: 
     """
-    select_best_reference.py \
+    combine_references.py \
     -g ${gtype_blast} \
     -p ${ptype_blast} \
     -G ${gtype_ref} \

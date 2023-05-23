@@ -5,11 +5,13 @@ import sys
 import pandas as pd 
 import argparse
 from tools import parse_fasta, write_fasta
+import traceback
+
 def get_parser():
 	parser = argparse.ArgumentParser()
 	parser.add_argument('blastn', help='BlastN results file in TSV format')
 	parser.add_argument('-m', '--metric', default="bitscore", help='Scoring metric to select best reference/contig. Either bitscore (default), rawscore, or bsr.')
-	parser.add_argument('-r', '--ref_scores', required='bsr' in sys.argv, default=None, help='Raw self-blast scores of reference sequences used for Blast Score Ratio')
+	parser.add_argument('-r', '--ref_scores', default=None, help='Raw self-blast scores of reference sequences used for Blast Score Ratio')
 	parser.add_argument('-c','--contig_mode', action='store_true', help='Print out \
 					best contig sequences instead of best references. References used by default.')
 	parser.add_argument('-s', '--seqs', required=True, help='Sequences file in FASTA format. Either the contig file or reference BLAST database in FASTA format.')
@@ -28,13 +30,13 @@ def parse_blast(filepath, ref_scores):
 			raise ValueError("ERROR: BLAST input has 0 rows.")
 		
 		# split the header into genotype and strain columns 
-		blast_df[['genotype','strain']] = blast_df['sseqid'].str.split("|",expand=True)[[1,2]]
+		# blast_df[['genotype','strain']] = blast_df['sseqid'].str.split("|",expand=True)[[1,2]]
 		# compute the coverage column
 		# blast_df['coverage'] = blast_df['length'] * 100 / blast_df['slen']
 		blast_df['prop_covered'] = blast_df['nident'] * 100 / blast_df['slen']
 		
 		# BLAST SCORE RATIOS 
-		if ref_scores:
+		if isinstance(ref_scores, pd.DataFrame):
 			colnames = ref_scores.columns
 			blast_df = blast_df.merge(ref_scores, left_on='sseqid', right_on=colnames[0]).drop(colnames[0],axis=1)
 			blast_df['bsr'] = blast_df['rawscore'] * 100 / blast_df[colnames[1]]
@@ -45,7 +47,7 @@ def parse_blast(filepath, ref_scores):
 		return blast_df
 
 	except Exception as e:
-		print(str(e))
+		print(traceback.format_exc())
 		print("ERROR: Failed to filter BLAST outputs (error above). Creating empty output files.",file=sys.stderr)
 		# final_cols = ['sample_name'] + cols + 'genotype strain prop_covered refscore bsr'.split()
 		return None

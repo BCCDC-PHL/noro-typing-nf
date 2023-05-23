@@ -1,5 +1,6 @@
 process get_coverage { 
-	// errorStrategy 'ignore'
+	errorStrategy 'ignore'
+
 	tag { sample_id }
 
 	publishDir "${params.outdir}/qc/coverage/bed", mode:'copy'
@@ -20,7 +21,7 @@ process get_coverage {
 }
 
 process plot_coverage { 
-	// errorStrategy 'ignore'
+	errorStrategy 'ignore'
 
 	tag { sample_id }
 
