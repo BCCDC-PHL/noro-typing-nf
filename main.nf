@@ -13,7 +13,7 @@ nextflow.enable.dsl = 2
 include { fastQC; fastq_check; run_quast; run_qualimap; run_custom_qc} from './modules/qc.nf'
 include { make_union_database; cutadapt; fastp; fastp_json_to_csv; run_kraken; kraken_filter } from './modules/prep.nf' 
 include { build_composite_reference; index_composite_reference ; dehost_fastq } from './modules/prep.nf'
-include { prep_database; make_blast_database; extract_genes_blast; run_self_blast; run_blastn; run_blastx; combine_references ; find_reference} from './modules/blast.nf'
+include { prep_database; make_blast_database; extract_genes_blast; run_self_blast; run_blastn; run_blastx; combine_references} from './modules/blast.nf'
 //include { p_make_blast_database; p_run_self_blast; p_run_blastn; p_filter_alignments; p_get_best_references; p_run_blastx } from './modules/p_blast.nf'
 include { assembly } from './modules/assembly.nf'
 include { create_bwa_index; create_fasta_index; map_reads; sort_filter_index_sam; merge_fasta_bam} from './modules/mapping.nf'
@@ -69,12 +69,16 @@ workflow genotyping {
 		// run_blastn(ch_contigs, ch_blastdb)
 
 		// Needed for blast score ratio
-		run_self_blast(ch_blastdb)
+		if (params.blast_typing_metric == 'bsr') {
+			ch_selfblast = run_self_blast(ch_blastdb)
+		} else {
+			ch_selfblast = Channel.fromPath("NO_FILE")
+		}
 
 		if (params.assemble){
-			run_blastn(ch_contigs.join(ch_contigs).combine(run_self_blast.out), ch_blastdb)
+			run_blastn(ch_contigs.join(ch_contigs), ch_blastdb, ch_selfblast)
 		} else {
-			run_blastn(ch_contigs.combine(prep_database.out).combine(run_self_blast.out), ch_blastdb)
+			run_blastn(ch_contigs.combine(prep_database.out), ch_blastdb, ch_selfblast)
 		}
 
 	emit:
@@ -94,12 +98,16 @@ workflow ptyping {
 		make_blast_database(extract_genes_blast.out).first().set{ch_blastdb} // first() converts the channel from a consumable queue channel into an infinite single-value channel
 
 		// Needed for blast score ratio
-		run_self_blast(ch_blastdb)
+		if (params.blast_typing_metric == 'bsr') {
+			ch_selfblast = run_self_blast(ch_blastdb)
+		} else {
+			ch_selfblast = Channel.fromPath("NO_FILE")
+		}
 
 		if (params.assemble){
-			run_blastn(ch_contigs.join(ch_contigs).combine(run_self_blast.out), ch_blastdb)
+			run_blastn(ch_contigs.join(ch_contigs), ch_blastdb, ch_selfblast)
 		} else {
-			run_blastn(ch_contigs.combine(prep_database.out).combine(run_self_blast.out), ch_blastdb)
+			run_blastn(ch_contigs.combine(prep_database.out), ch_blastdb, ch_selfblast)
 		}
 
 	emit:
@@ -157,13 +165,14 @@ workflow {
 	ch_centrifuge_db = Channel.from(params.centrifuge_db)
 	ch_blastdb_gtype_fasta = Channel.from(params.gtype_database)
 	ch_blastdb_ptype_fasta = Channel.from(params.ptype_database)
-
-
-
 	ch_fastq_input = Channel.fromFilePairs( params.fastq_search_path, flat: true ).map{ it -> [it[0].split('_')[0], it[1], it[2]] }.unique{ it -> it[0] }
 
 	main:
 		//hash_files(ch_fastq_input.map{ it -> [it[0], [it[1], it[2]]] }.combine(Channel.of("fastq_input")))
+
+		if (params.blast_refsearch_metric == 'bsr'){
+			error "ERROR BLAST Reference search cannot use bsr (blast score ratio)."
+		}
 
 		// UNION DATABASE
 		make_union_database(ch_blastdb_gtype_fasta, ch_blastdb_ptype_fasta)
@@ -207,16 +216,19 @@ workflow {
 
 		// Use large database to find reference
 		if (params.reference_database){
-			make_blast_database(Channel.from(params.reference_database)).first().set{ch_reference_database}
+			ch_global_ref_db = Channel.fromPath(params.reference_database)
+
+			make_blast_database(ch_global_ref_db).first().set{ch_global_blast_db}
+
 			// SEARCH REFERENCE DB 
-			find_reference(assembly.out, ch_reference_database)
+			run_blastn(assembly.out.combine(ch_global_ref_db), ch_global_blast_db, Channel.fromPath('NO_FILE').first())
 
 			// SINGLE REFERENCE MAPPING 
-			create_bwa_index(find_reference.out.ref)
+			create_bwa_index(run_blastn.out.ref)
 			map_reads(dehost_fastq.out.fastq.join(create_bwa_index.out))
 			sort_filter_index_sam(map_reads.out)
 
-			ch_best_reference = find_reference.out.ref
+			ch_best_reference = run_blastn.out.ref
 			ch_bamfile = sort_filter_index_sam.out
 
 		// Synthesize new reference from scratch
