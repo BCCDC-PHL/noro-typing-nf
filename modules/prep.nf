@@ -22,6 +22,7 @@ process fastp {
 
     publishDir "${params.outdir}/preprocess/fastp", pattern: "${sample_id}*_R{1,2}.trim.fastq.gz" 
     publishDir "${params.outdir}/preprocess/fastp/html", pattern: "${sample_id}*html" , mode:'copy'
+    publishDir "${params.outdir}/preprocess/fastp/csv", pattern: "${sample_id}*csv", mode: "copy"
 
     input:
     tuple val(sample_id), path(fastq1), path(fastq2)
@@ -31,6 +32,7 @@ process fastp {
     tuple val(sample_id), path("${sample_id}.fastp.json"), emit: json
     tuple val(sample_id), path("${sample_id}.fastp.html"), emit: html
     tuple val(sample_id), path("${sample_id}_fastp_provenance.yml"), emit: provenance
+    tuple val(sample_id), path("${sample_id}_fastp.csv"), emit: csv
 
     script:
     """
@@ -44,22 +46,7 @@ process fastp {
       -O ${sample_id}_R2.trim.fastq.gz \
       -j ${sample_id}.fastp.json \
       -h ${sample_id}.fastp.html \
-      --detect_adapter_for_pe
-    """
-}
-
-process fastp_json_to_csv {
-    tag { sample_id }
-
-    publishDir path: "${params.outdir}/preprocess/fastp/csv", pattern: "${sample_id}*csv", mode: "copy"
-
-    input: 
-    tuple val(sample_id), path(fastp_json)
-
-    output:
-    tuple val(sample_id), path("${sample_id}_fastp.csv")
-
-    """
+      --detect_adapter_for_pe && 
     fastp_json_to_csv.py ${fastp_json} > ${sample_id}_fastp.csv
     """
 }
@@ -105,41 +92,23 @@ process run_kraken {
 
     publishDir path: "${params.outdir}/filtering/kraken/reports", pattern: "${sample_id}.kraken.report", mode: "copy"
     publishDir path: "${params.outdir}/filtering/kraken/output", pattern: "${sample_id}.kraken.out", mode: "copy"
-
+    publishDir path: "${params.outdir}/filtering/kraken/filtered", pattern: "${sample_id}*kfilter.fastq.gz"
 
     input: 
     tuple val(sample_id), path(reads_1), path(reads_2)
 
     output:
     tuple val(sample_id), path("${sample_id}.kraken.report"), path("${sample_id}.kraken.out"), emit: main
+    tuple val(sample_id), path("${sample_id}_R1.kfilter.fastq.gz"), path("${sample_id}_R2.kfilter.fastq.gz"), emit: fastq
     path("${sample_id}.kraken.report"), emit: report
 
     """
     kraken2 --confidence 0.1 \
     --threads ${task.cpus} --db ${params.kraken_db} \
     --paired ${reads_1} ${reads_2} \
-    --report ${sample_id}.kraken.report > ${sample_id}.kraken.out 
-    """
-}
+    --report ${sample_id}.kraken.report > ${sample_id}.kraken.out &&
 
-process kraken_filter {
-
-    tag {sample_id}
-
-    conda "${projectDir}/environments/kraken.yaml"
-
-    publishDir path: "${params.outdir}/filtering/kraken/filtered", pattern: "${sample_id}*fastq.gz"
-
-    input:
-    tuple val(sample_id), path(reads_1), path(reads_2), path(kraken_report), path(kraken_out)
-
-    output:
-    tuple val(sample_id), path("${sample_id}_R1.kfilter.fastq.gz"), path("${sample_id}_R2.kfilter.fastq.gz"), emit: fastq
-
-    script:
-    """
     # Extract the norovirus specific reads 
-    # will exclude anything not under Norovirus clade; including human reads 
     extract_kraken_reads.py  --fastq-output \
     -k ${sample_id}.kraken.out -r ${sample_id}.kraken.report \
     -1 ${reads_1} -2 ${reads_2} \
@@ -148,7 +117,6 @@ process kraken_filter {
     gzip -c ${sample_id}_R1.kfilter.fastq > ${sample_id}_R1.kfilter.fastq.gz &&
     gzip -c ${sample_id}_R2.kfilter.fastq > ${sample_id}_R2.kfilter.fastq.gz
     """
-
 }
 
 process run_centrifuge {
@@ -185,34 +153,18 @@ process build_composite_reference {
     tuple path(human_ref), path(virus_ref)
 
     output:
-    path("${composite_ref}"), emit: fasta
+    tuple path("${composite_ref}"), path("${composite_ref}.*")
     // path("${composite_ref}.*"), emit: index
     // path("reference_headers.txt"), emit: headers
 
     script:
     composite_ref = params.composite_ref_name 
     """ 
-    cat ${human_ref} ${virus_ref} > ${composite_ref} 
-    """
-}
-
-process index_composite_reference {
-    storeDir "${projectDir}/cache/composite"
-
-    // label 'ultra'
-
-    input:
-    path(composite_ref)
-
-    output:
-    // val("${composite_ref.simpleName}"), emit: name
-    // tuple path("${composite_ref}.bwt"), path("${composite_ref}.amb"), path("${composite_ref}.ann"), path("${composite_ref}.pac"), path("${composite_ref}.sa"), emit: files
-    tuple path("${composite_ref}"), path("${composite_ref}.*")
-
-    script:
-    ref_name = composite_ref.simpleName
-    """
-    bwa index -a bwtsw -b 10000000 ${composite_ref}
+    echo "Building composite reference..." && 
+    cat ${human_ref} ${virus_ref} > ${composite_ref} &&
+    echo "Indexing composite reference..." && 
+    bwa index -a bwtsw -b 10000000 ${composite_ref} &&
+    echo "Complete." 
     """
 }
 
