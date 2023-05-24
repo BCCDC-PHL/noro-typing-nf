@@ -11,8 +11,8 @@ nextflow.enable.dsl = 2
 // include { pipeline_provenance } from './modules/provenance.nf'
 // include { collect_provenance } from './modules/provenance.nf'
 include { fastQC; fastq_check; run_quast; run_qualimap; run_custom_qc} from './modules/qc.nf'
-include { make_union_database; cutadapt; fastp; fastp_json_to_csv; run_kraken; kraken_filter } from './modules/prep.nf' 
-include { build_composite_reference; index_composite_reference ; dehost_fastq } from './modules/prep.nf'
+include { make_union_database; cutadapt; fastp; run_kraken } from './modules/prep.nf' 
+include { build_composite_reference; dehost_fastq } from './modules/prep.nf'
 include { prep_database; make_blast_database; extract_genes_blast; run_self_blast; run_blastn; run_blastx; combine_references} from './modules/blast.nf'
 //include { p_make_blast_database; p_run_self_blast; p_run_blastn; p_filter_alignments; p_get_best_references; p_run_blastx } from './modules/p_blast.nf'
 include { assembly } from './modules/assembly.nf'
@@ -194,7 +194,6 @@ workflow {
 		// QUALITY CONTROL 
 		cutadapt(ch_fastq_input)
 		fastp(cutadapt.out.trimmed_reads)
-		fastp_json_to_csv(fastp.out.json)
 		
 		fastQC(fastp.out.trimmed_reads)
 		fastq_check(fastp.out.trimmed_reads)
@@ -202,15 +201,13 @@ workflow {
 		
 		// KRAKEN FILTERING
 		run_kraken(fastp.out.trimmed_reads)
-		kraken_filter(fastp.out.trimmed_reads.join(run_kraken.out.main))
 		
 		// DEHOSTING
 		build_composite_reference(ch_human_ref.combine(make_union_database.out.fasta))
-		index_composite_reference(build_composite_reference.out)
 		dehost_fastq(
-			kraken_filter.out.fastq,
+			run_kraken.out.fastq,
 			make_union_database.out.headers.first(), 
-			index_composite_reference.out.first()
+			build_composite_reference.out.first()
 		) 
 
 		// ASSEMBLY
