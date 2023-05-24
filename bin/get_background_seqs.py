@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #%%
 import os, sys
 from glob import glob 
@@ -18,9 +19,15 @@ def get_create_time(path):
 	t = os.stat(path).st_ctime
 	return dt.fromtimestamp(t)
 
+def read_sequences(path):
+	return [x for x in SeqIO.parse(path, 'fasta') if x.id.endswith('sample')]
+
 def sample_sequences(path, n):
-	seqs = list(SeqIO.parse(path, 'fasta'))
-	return random.sample(seqs, n) 
+	seqs = read_sequences(path)
+	if n > len(seqs):
+		return []
+	else:
+		return random.sample(seqs, n) 
 
 def main():
 	parser = init_parser()
@@ -33,7 +40,7 @@ def main():
 	consensus_files = glob(os.path.join(args.path, schema))
 
 	# count the number of sequences per file 
-	counts = list(map(lambda x: len(list(SeqIO.parse(x, 'fasta'))), consensus_files))
+	counts = list(map(lambda x: len(read_sequences(x)), consensus_files))
 
 	max_sequences = 50
 	min_sequences = 1
@@ -63,6 +70,10 @@ def main():
 	else:
 		# simply extract all sequences
 		seqs = [seq for path in consensus_files for seq in SeqIO.parse(path, 'fasta')]
+
+	# rename sequences for background formatting
+	for s in seqs:
+		s.id = s.id.replace("sample", "background")
 
 	# write outputs 
 	SeqIO.write(seqs, args.outfasta, 'fasta')
