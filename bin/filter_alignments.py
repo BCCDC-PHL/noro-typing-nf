@@ -15,13 +15,15 @@ def get_parser():
 	parser.add_argument('-c','--contig_mode', action='store_true', help='Print out \
 					best contig sequences instead of best references. References used by default.')
 	parser.add_argument('-s', '--seqs', required=True, help='Sequences file in FASTA format. Either the contig file or reference BLAST database in FASTA format.')
+	parser.add_argument('-t', '--header_pos_type', default=1, type=int, help='Zero-index position of the reference sequence type in the header(genotype or p-type)')
+	parser.add_argument('-d', '--header_delim', default="|", help='Delimiter separating reference header fields.')
 	parser.add_argument('-o','--tsv_out', default=None, help='Filtered results output')
 	parser.add_argument('-O','--fasta_out', default=None, help='Filtered FASTA output')
 	parser.add_argument('--min_cov', default=25, type=int, help='Minimum coverage of database reference sequence by contig (percentage, default = 25)')
 	parser.add_argument('-i','--min_id', default=90, type=int, help='Minimum nucleotide sequence identity between database reference sequence and contig (percentage, default = 90)')
 	return parser
 
-def parse_blast(filepath, ref_scores):
+def parse_blast(filepath, ref_scores, header_delim, header_pos_type):
 	cols = 'qseqid sseqid pident qlen slen length bitscore rawscore'.split()
 	blast_df = pd.read_csv(filepath, sep='\t', names=cols)
 
@@ -34,6 +36,7 @@ def parse_blast(filepath, ref_scores):
 		# compute the coverage column
 		# blast_df['coverage'] = blast_df['length'] * 100 / blast_df['slen']
 		blast_df['prop_covered'] = blast_df['length'] * 100 / blast_df['slen']
+		blast_df['type'] = blast_df['qseqid'].str.split(header_delim).str[header_pos_type]
 
 		blast_df['cov'] = blast_df['qseqid'].str.split("_").str[-1].astype(float)
 		#blast_df = blast_df.loc[blast_df['cov'] > 10]
@@ -80,7 +83,7 @@ def filter_alignments(blast_results, score_column, min_cov, min_id):
 		# best_scores = blast_results[['qseqid', score_column]].groupby('qseqid')[score_column].nlargest(5).reset_index()[['qseqid',score_column]]
 		# blast_results = blast_results.nlargest(5, score_column)
 
-		idxmax = blast_results.groupby('qseqid')['composite'].idxmax()
+		idxmax = blast_results.groupby('type')['composite'].idxmax()
 		filtered = blast_results.loc[idxmax].drop_duplicates('sseqid')
 		filtered = filtered.sort_values('composite', ascending=False).reset_index(drop=True)
 
@@ -144,7 +147,7 @@ def main():
 		ref_scores = None
 
 	# parse the raw BLAST results 
-	blast_df = parse_blast(args.blastn, ref_scores)
+	blast_df = parse_blast(args.blastn, ref_scores, args.header_delim, args.header_pos_type)
 
 	# exit if no BLAST results are found 
 	if blast_df.shape[0] == 0:
