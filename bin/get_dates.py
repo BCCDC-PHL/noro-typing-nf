@@ -109,15 +109,15 @@ def main():
 	header_list = pd.Series([x.id for x in seqs])
 
 	# split up the target sequences and the reference sequences
-	targets = header_list.str.contains("\|sample$")
-	
+	targets = header_list.str.contains("\|sample")
+	background = header_list.str.contains("\|background")
+
 	# create a dictionary of full_header : accession number
-	ref_headers = header_list.loc[~targets]
+	ref_headers = header_list.loc[(~targets)&(~background)]
 	ref_headers = {x : x.split(args.header_delim)[args.accno_pos] for x in ref_headers}
 
 	# extract target sequences
 	target_headers = header_list.loc[targets].tolist()
-	print(target_headers)
 
 	# retrieve the collection dates 
 	dates_dict = parse_dates(list(ref_headers.values()))
