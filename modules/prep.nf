@@ -47,7 +47,7 @@ process fastp {
       -j ${sample_id}.fastp.json \
       -h ${sample_id}.fastp.html \
       --detect_adapter_for_pe && 
-    fastp_json_to_csv.py ${fastp_json} > ${sample_id}_fastp.csv
+    fastp_json_to_csv.py ${sample_id}.fastp.json > ${sample_id}_fastp.csv
     """
 }
 
