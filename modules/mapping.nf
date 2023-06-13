@@ -1,21 +1,3 @@
-process create_bwa_index {
-
-    // storeDir "${projectDir}/cache/bwa_index/"
-	tag {sample_id}
-    
-    input:
-    tuple val(sample_id), path(fasta)
-
-    output:
-    tuple val(sample_id), val("${fasta}"), path("${fasta}.*")
-
-    script:
-    """
-    bwa index ${fasta}
-    """
-
-}
-
 process create_fasta_index {
 
     // storeDir "${projectDir}/cache/bwa_index/"
@@ -45,14 +27,14 @@ process map_reads {
     //publishDir "${params.outdir}/aligned_reads/sam", pattern: "${sample_id}.sam" , mode:'copy'
 
     input: 
-    tuple val(sample_id), path(reads_1), path(reads_2), val(index_name), path("*")
+    tuple val(sample_id), path(reads_1), path(reads_2), path(reference)
 
     output:
     tuple val(sample_id), path("${sample_id}.sam")
 
-
 	"""
-	bwa mem -t ${task.cpus} ${index_name} ${reads_1} ${reads_2} > ${sample_id}.sam
+    bwa index ${reference}
+	bwa mem -t ${task.cpus} ${reference} ${reads_1} ${reads_2} > ${sample_id}.sam
 	"""
 }
 process sort_filter_index_sam {
