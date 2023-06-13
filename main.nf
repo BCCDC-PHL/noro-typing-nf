@@ -16,7 +16,7 @@ include { build_composite_reference; dehost_fastq } from './modules/prep.nf'
 include { prep_database; make_blast_database; extract_genes_blast; run_self_blast; run_blastn; run_blastx; combine_references} from './modules/blast.nf'
 //include { p_make_blast_database; p_run_self_blast; p_run_blastn; p_filter_alignments; p_get_best_references; p_run_blastx } from './modules/p_blast.nf'
 include { assembly } from './modules/assembly.nf'
-include { create_bwa_index; create_fasta_index; map_reads; sort_filter_index_sam; merge_fasta_bam} from './modules/mapping.nf'
+include { create_fasta_index; map_reads; sort_filter_index_sam; merge_fasta_bam} from './modules/mapping.nf'
 include { run_freebayes; run_mpileup ; get_common_snps } from './modules/variant_calling.nf'
 include { get_coverage; plot_coverage; make_pileup} from "./modules/coverage.nf"
 include { mask_low_coverage; make_consensus } from './modules/consensus.nf'
@@ -72,7 +72,7 @@ workflow genotyping {
 		if (params.blast_typing_metric == 'bsr') {
 			ch_selfblast = run_self_blast(ch_blastdb)
 		} else {
-			ch_selfblast = Channel.fromPath("NO_FILE")
+			ch_selfblast = Channel.fromPath("NO_FILE").first()
 		}
 
 		if (params.assemble){
@@ -101,7 +101,7 @@ workflow ptyping {
 		if (params.blast_typing_metric == 'bsr') {
 			ch_selfblast = run_self_blast(ch_blastdb)
 		} else {
-			ch_selfblast = Channel.fromPath("NO_FILE")
+			ch_selfblast = Channel.fromPath("NO_FILE").first()
 		}
 
 		if (params.assemble){
@@ -155,7 +155,7 @@ workflow create_ptree {
 			ch_sequences = ch_sequences.mix(get_background_sequences.out)
 		} 
 
-		make_multifasta(ch_gene_database_fasta.mix(extract_sample_genes.out).collect())
+		make_multifasta(ch_sequences.collect())
 		make_dates_file(make_multifasta.out)
 		make_msa(make_multifasta.out)
 		make_tree(make_msa.out.combine(make_dates_file.out))
@@ -164,6 +164,30 @@ workflow create_ptree {
 		align = make_msa.out
 		tree = make_tree.out.tree
 
+}
+
+workflow global_reference_search {
+	take:
+		ch_contigs
+		ch_fastqs
+
+	main:
+		ch_global_ref_db = Channel.fromPath(params.reference_database)
+		make_blast_database(ch_global_ref_db).first().set{ch_global_blast_db}
+
+		// SEARCH REFERENCE DB 
+		run_blastn(ch_contigs.combine(ch_global_ref_db), ch_global_blast_db, Channel.fromPath('NO_FILE').first())
+
+		// SINGLE REFERENCE MAPPING 
+		map_reads(ch_fastqs.join(run_blastn.out.ref))
+		sort_filter_index_sam(map_reads.out)
+		get_coverage(sort_filter_index_sam.out)
+
+	emit:
+		ref = run_blastn.out.ref
+		bam = sort_filter_index_sam.out
+		cov = get_coverage.out.main
+		cov_metric = get_coverage.out.metric
 }
 
 workflow {
@@ -188,9 +212,6 @@ workflow {
 			error "ERROR BLAST Reference search cannot use bsr (blast score ratio)."
 		}
 
-		// UNION DATABASE
-		make_union_database(ch_blastdb_gtype_fasta, ch_blastdb_ptype_fasta)
-
 		// QUALITY CONTROL 
 		cutadapt(ch_fastq_input)
 		fastp(cutadapt.out.trimmed_reads)
@@ -203,6 +224,7 @@ workflow {
 		run_kraken(fastp.out.trimmed_reads)
 		
 		// DEHOSTING
+		make_union_database(ch_blastdb_gtype_fasta, ch_blastdb_ptype_fasta)
 		build_composite_reference(ch_human_ref.combine(make_union_database.out.fasta))
 		dehost_fastq(
 			run_kraken.out.fastq,
@@ -224,49 +246,47 @@ workflow {
 		genotyping.out.filter.collectFile(name: "${params.outdir}/blastn/final/gtypes.tsv", keepHeader: true, skip: 1)
 		ptyping.out.filter.collectFile(name: "${params.outdir}/blastn/final/ptypes.tsv", keepHeader: true, skip: 1)
 
-
-		// Use large database to find reference
-		if (params.reference_database){
-			ch_global_ref_db = Channel.fromPath(params.reference_database)
-
-			make_blast_database(ch_global_ref_db).first().set{ch_global_blast_db}
-
-			// SEARCH REFERENCE DB 
-			run_blastn(assembly.out.combine(ch_global_ref_db), ch_global_blast_db, Channel.fromPath('NO_FILE').first())
-
-			// SINGLE REFERENCE MAPPING 
-			create_bwa_index(run_blastn.out.ref)
-			map_reads(dehost_fastq.out.fastq.join(create_bwa_index.out))
-			sort_filter_index_sam(map_reads.out)
-
-			ch_best_reference = run_blastn.out.ref
-			ch_bamfile = sort_filter_index_sam.out
-
 		// Synthesize new reference from scratch
-		} else {
-			// COMBINE REFERENCES
-			combine_references(genotyping.out.main.join(ptyping.out.main))
-			combine_references.out.blast.collectFile(name: "${params.outdir}/blastn/final/final_types.tsv", keepHeader: true, skip: 1, newLine: true)
+		// COMBINE REFERENCES
+		combine_references(genotyping.out.main.join(ptyping.out.main))
+		//combine_references.out.blast.collectFile(name: "${params.outdir}/blastn/final/final_types.tsv", keepHeader: true, skip: 1, newLine: true)
 
-			// COMPETITIVE MAPPING 
-			create_bwa_index(combine_references.out.ref)
-			map_reads(dehost_fastq.out.fastq.join(create_bwa_index.out))
-			sort_filter_index_sam(map_reads.out)
+		// COMPETITIVE MAPPING 
+		map_reads(dehost_fastq.out.fastq.join(combine_references.out))
+		sort_filter_index_sam(map_reads.out)
 
-			// GENERATE NEW MERGED REFERENCE
-			merge_fasta_bam(combine_references.out.ref.join(sort_filter_index_sam.out))
+		// GENERATE NEW MERGED REFERENCE
+		merge_fasta_bam(combine_references.out.join(sort_filter_index_sam.out))
 
-			ch_best_reference = merge_fasta_bam.out.ref
-			ch_bamfile = merge_fasta_bam.out.bam
-		}
+		get_coverage(merge_fasta_bam.out.bam)
+
+		ch_best_reference = merge_fasta_bam.out.ref
+		ch_bamfile = merge_fasta_bam.out.bam
+		ch_coverage = get_coverage.out.main
+		val_coverage = get_coverage.out.metric
+
+		// // If parameter passed, use comprehensive reference database to find reference
+		// if (params.reference_database){
+			
+		// 	global_reference_search(assembly.out, dehost_fastq.out.fastq)
+
+		// 	choices = val_coverage.join(global_reference_search.out.cov_metric).map{
+		// 		name, val1, val2 ->
+		// 			val1 > val2:
+		// 				return 'synthetic'
+		// 			val1 <= val2:
+		// 				return 'database'
+		// 	}.view{"resuult $it"}
+
+		// }
 
 		make_pileup(ch_best_reference.join(ch_bamfile))
 		//create_pileup.out.metrics.collectFile(name: "${params.outdir}/qc/pileups", keepHeader: true, skip: 1)
 		run_qualimap(ch_bamfile)
 
 		// PLOT COVERAGE
-		get_coverage(ch_bamfile)
-		plot_coverage(get_coverage.out.coverage_file)
+		// get_coverage(ch_bamfile)
+		plot_coverage(ch_coverage)
 
 		// VARIANT CALLING
 		create_fasta_index(ch_best_reference)
@@ -278,11 +298,13 @@ workflow {
 		mask_low_coverage(ch_bamfile)
 		make_consensus(get_common_snps.out.join(ch_best_reference).join(mask_low_coverage.out))
 
+		// GENE-SPECIFIC PHYLOGENETIC TREES
 		create_gtree(make_consensus.out, genotyping.out.gene_db)
 		create_ptree(make_consensus.out, ptyping.out.gene_db)
 
+		// CUSTOM QC 
 		run_custom_qc(ch_bamfile.join(ch_best_reference).join(make_consensus.out))
-		run_custom_qc.out.csv.collectFile(name: "${params.outdir}/qc/custom/qc_all.csv", keepHeader: true, skip: 1)
+		run_custom_qc.out.csv.collectFile(name: "${params.outdir}/qc/custom/qc_all.csv", keepHeader: true, skip: 1, newLine:true)
 
 		ch_sequences = make_consensus.out.map{it -> it[1]}
 
