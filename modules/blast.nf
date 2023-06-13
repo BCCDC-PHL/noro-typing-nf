@@ -8,7 +8,7 @@ nextflow.enable.dsl=2
 import java.nio.file.Paths
 
 process prep_database {
-    storeDir "${projectDir}/cache/blast_db/full_${workflow}"
+    storeDir "${projectDir}/cache/blast_db/full_${custom_dir}"
     
     input:
     path(database)
@@ -18,6 +18,7 @@ process prep_database {
 
     script:
     workflow = task.ext.workflow ?: 'full_genome'
+    custom_dir = task.ext.custom_dir ?: 'main'
     """
     filter_fasta.py \
     --header_delim ${params.header_delim} \
@@ -45,7 +46,7 @@ process extract_genes_blast {
 }
 
 process make_blast_database {
-    storeDir "${projectDir}/cache/blast_db/${custom_dir}"
+    storeDir "${projectDir}/cache/blast_db/gene_${custom_dir}"
     
     input:
     path(fasta)
@@ -106,7 +107,7 @@ process run_blastn {
     output:
     tuple val(sample_id), path("${sample_id}*blastn.tsv"), emit: raw
     tuple val(sample_id), path("${sample_id}*filter.tsv"), path("${sample_id}*fasta"), emit: main
-    tuple val(sample_id), path("${sample_id}*full.tsv"), emit: full
+    //tuple val(sample_id), path("${sample_id}*full.tsv"), emit: full
     tuple val(sample_id), path("${sample_id}*_ref.fasta"), emit: ref
     path("${sample_id}*filter.tsv"), emit: filter
 
@@ -142,18 +143,56 @@ process combine_references {
     tuple val(sample_id), path(gtype_blast), path(gtype_ref), path(ptype_blast), path(ptype_ref)
 
     output:
-    tuple val(sample_id), path("${sample_id}.ref.final.fasta"), emit: ref
-    path("${sample_id}*final.tsv"), emit: blast
+    tuple val(sample_id), path("${sample_id}.ref.final.fasta")
+    // path("${sample_id}*final.tsv"), emit: blast
 
     script: 
     """
-    combine_references.py \
-    -g ${gtype_blast} \
-    -p ${ptype_blast} \
-    -G ${gtype_ref} \
-    -P ${ptype_ref} \
-    --outfasta ${sample_id}.ref.final.fasta \
-    --outblast ${sample_id}.blast.final.tsv
+    delim=${params.header_delim}
+    pos_type=${params.header_pos_type}
+    pos_accno=${params.header_pos_accno}
+
+    gheader=`head -n1 ${gtype_ref} | cut -c2-`
+    pheader=`head -n1 ${ptype_ref} | cut -c2-`
+
+    if [ -z \$gheader ] && [ -z \$pheader ]; then 
+        echo "ERROR: Neither gtype or ptype reference is a valid FASTA"
+        exit 1  
+    fi
+
+    function concat_header {
+        filename=\$1
+        append=\$2
+
+        header=`head -n1 \$filename`
+        newheader="\$header \$append"
+
+        sed -i 1d \$filename
+        sed -i 1i"\$newheader" \$filename
+    }
+
+    gfields=(\${gheader//\$delim/ })
+    pfields=(\${pheader//\$delim/ })
+
+    newheader="${sample_id}|\${gfields[\$pos_type]}_\${pfields[\$pos_type]}|\${gfields[\$pos_accno]}_\${pfields[\$pos_accno]}|sample"
+    echo \$newheader
+
+    if [ ! -z \$gheader ]; then 
+        concat_header ${gtype_ref} \${newheader}
+    fi
+    if [ ! -z \$pheader ]; then 
+        concat_header ${ptype_ref} \${newheader}
+    fi
+
+    if [ -z \$gheader ] && [ ! -z \$pheader ]; then
+        cp ${ptype_ref} ${sample_id}.ref.final.fasta
+    elif [ -z \$pheader ] && [ ! -z \$gheader ]; then
+        cp ${gtype_ref} ${sample_id}.ref.final.fasta
+    elif [ \$gheader == \$pheader ] ; then 
+        cp ${gtype_ref} ${sample_id}.ref.final.fasta
+    else
+        cat ${gtype_ref} ${ptype_ref} > ${sample_id}.ref.final.fasta
+    fi 
     """
 }
 
