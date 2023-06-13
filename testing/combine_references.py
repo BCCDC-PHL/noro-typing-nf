@@ -19,11 +19,11 @@ def get_parser():
 	parser.add_argument('--header_pos_type', default=1, help='Zero indexed position of sequence type')
 	parser.add_argument('--header_delim', default='|', help='Delimiter used in incoming FASTA headers')
 	parser.add_argument('-o', '--outfasta', default='best_reference.fasta', help='Output file in FASTA format.')
-	parser.add_argument('-O', '--outblast', default='best_reference.fasta', help='Output file in FASTA format.')
+	parser.add_argument('-O', '--outblast', default='best_blast.tsv', help='Output BLAST results in TSV format.')
 	return parser
 
-def select_best(gblast, pblast):
-	if gblast['bsr'][0] > pblast['bsr'][0]:
+def select_best(gblast, pblast, metric_column):
+	if gblast[metric_column][0] > pblast[metric_column][0]:
 		return "gtype"
 	else:
 		return "ptype"
@@ -66,7 +66,7 @@ def main():
 		pfasta = None
 
 	# BEST CASE -- both inputs are valid
-	if (gtype_df.shape[0] == 1 and gfasta) and (ptype_df.shape[0] == 1 and pfasta):
+	if (gtype_df.shape[0] > 0 and gfasta) and (ptype_df.shape[0] > 0 and pfasta):
 		choice = select_best(gtype_df, ptype_df)
 	
 	# valid ptype outputs; gtyping failed
