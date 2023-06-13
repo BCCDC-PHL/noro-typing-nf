@@ -36,7 +36,7 @@ def parse_blast(filepath, ref_scores, header_delim, header_pos_type):
 		# compute the coverage column
 		# blast_df['coverage'] = blast_df['length'] * 100 / blast_df['slen']
 		blast_df['prop_covered'] = blast_df['length'] * 100 / blast_df['slen']
-		blast_df['type'] = blast_df['qseqid'].str.split(header_delim).str[header_pos_type]
+		blast_df['type'] = blast_df['sseqid'].str.split(header_delim).str[header_pos_type]
 
 		blast_df['cov'] = blast_df['qseqid'].str.split("_").str[-1].astype(float)
 		#blast_df = blast_df.loc[blast_df['cov'] > 10]
@@ -148,7 +148,7 @@ def main():
 
 	# parse the raw BLAST results 
 	blast_df = parse_blast(args.blastn, ref_scores, args.header_delim, args.header_pos_type)
-
+	print(blast_df)
 	# exit if no BLAST results are found 
 	if blast_df.shape[0] == 0:
 		print("WARNING: No data found in blast input file. Exiting.", file=sys.stderr)
