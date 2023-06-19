@@ -29,19 +29,34 @@ process prep_database {
 }
 
 process extract_genes_blast {
-    storeDir "${projectDir}/cache/blast_db/gene_${custom_dir}"
+
+    storeDir "${projectDir}/cache/blast_db/gene/${custom_dir}"
+
+    label 'ultra'
     
     input:
-    path(blast_db)
+    path(blast_db_fasta)
 
     output:
-    path("${blast_db.simpleName}_${gene}.fasta")
+    path("${outname}*.fasta"), emit: db, optional: true
+    path("*vp1.fasta"), emit: vp1, optional: true
+    path("*rdrp.fasta"), emit: rdrp, optional: true
+    path("${outname}*.yaml"), emit: positions, optional: true
 
     script:
-    custom_dir = task.ext.custom_dir ?: 'full_genome'
-    gene = task.ext.gene ?: ''
+    custom_dir = task.ext.custom_dir ?: 'global'
+    gene = task.ext.gene ?: 'all'
+    outname = task.ext.gene ? "${blast_db_fasta.simpleName}_${gene}" : "${blast_db_fasta.simpleName}_{gene}"
+
     """
-    extract_genes.py database --query ${blast_db} --ref ${params.g1_reference} --positions ${params.g1_gene_positions} --gene ${gene} --output ${blast_db.simpleName}_${gene}.fasta
+    extract_genes.py database \
+    --nthreads ${task.cpus} \
+    --query ${blast_db_fasta} \
+    --ref ${params.g1_reference} \
+    --positions ${params.g1_gene_positions} \
+    --gene ${gene} \
+    --outfasta ${outname}.fasta \
+    --outyaml ${outname}_pos.yaml
     """
 }
 
