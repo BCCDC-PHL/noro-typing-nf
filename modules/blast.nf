@@ -8,7 +8,7 @@ nextflow.enable.dsl=2
 import java.nio.file.Paths
 
 process prep_database {
-    storeDir "${projectDir}/cache/blast_db/full_${custom_dir}"
+    storeDir "${projectDir}/cache/blast_db/full/${custom_dir}"
     
     input:
     path(database)
@@ -17,13 +17,14 @@ process prep_database {
     path("*filter.fasta")
 
     script:
-    workflow = task.ext.workflow ?: 'full_genome'
-    custom_dir = task.ext.custom_dir ?: 'main'
+    workflow = task.ext.workflow ?: 'full'
+    custom_dir = task.ext.custom_dir ?: 'global'
     """
     filter_fasta.py \
     --header_delim ${params.header_delim} \
     --header_pos_accno ${params.header_pos_accno} \
     --header_pos_type ${params.header_pos_type} \
+    --rename \
     ${database} ${database.simpleName}_filter.fasta
     """
 }
