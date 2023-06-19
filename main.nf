@@ -65,7 +65,7 @@ workflow genotyping {
 		// GENOTYPE BLAST SEARCH
 		prep_database(ch_blastdb_fasta)
 		extract_genes_blast(prep_database.out)
-		make_blast_database(extract_genes_blast.out).first().set{ch_blastdb} // first() converts the channel from a consumable queue channel into an infinite single-value channel
+		make_blast_database(extract_genes_blast.out.db).first().set{ch_blastdb} // first() converts the channel from a consumable queue channel into an infinite single-value channel
 		// run_blastn(ch_contigs, ch_blastdb)
 
 		// Needed for blast score ratio
@@ -84,7 +84,7 @@ workflow genotyping {
 	emit:
 		main = run_blastn.out.main
 		filter = run_blastn.out.filter
-		gene_db = extract_genes_blast.out
+		gene_db = extract_genes_blast.out.db
 }
 
 workflow ptyping {
@@ -95,7 +95,7 @@ workflow ptyping {
 		// GENOTYPE BLAST SEARCH
 		prep_database(ch_blastdb_fasta)
 		extract_genes_blast(prep_database.out)
-		make_blast_database(extract_genes_blast.out).first().set{ch_blastdb} // first() converts the channel from a consumable queue channel into an infinite single-value channel
+		make_blast_database(extract_genes_blast.out.db).first().set{ch_blastdb} // first() converts the channel from a consumable queue channel into an infinite single-value channel
 
 		// Needed for blast score ratio
 		if (params.blast_typing_metric == 'bsr') {
@@ -113,26 +113,25 @@ workflow ptyping {
 	emit:
 		main = run_blastn.out.main
 		filter = run_blastn.out.filter
-		gene_db = extract_genes_blast.out
+		gene_db = extract_genes_blast.out.db
 }
 
 workflow create_gtree {
 	take:
 		ch_consensus_fasta
-		ch_gene_database_fasta
-
+		ch_sample_db
+		ch_gene_db
 	main:
-		extract_sample_genes(ch_consensus_fasta.combine(ch_gene_database_fasta))
-		ch_sequences = ch_gene_database_fasta.mix(extract_sample_genes.out)
+		extract_sample_genes(ch_consensus_fasta.join(ch_sample_db))
+		make_multifasta(extract_sample_genes.out.mix(ch_gene_db).collect()).set{ch_sequences}
 
 		if (params.results_path){
-			get_background_sequences(Channel.fromPath(params.results_path))
-			ch_sequences = ch_sequences.mix(get_background_sequences.out)
+			get_background_sequences(ch_sequences, Channel.fromPath(params.results_path))
+			ch_sequences = ch_sequences.mix(get_background_sequences.out).collect()
 		} 
 
-		make_multifasta(ch_sequences.collect())
-		make_dates_file(make_multifasta.out)
-		make_msa(make_multifasta.out)
+		make_dates_file(ch_sequences)
+		make_msa(ch_sequences)
 		make_tree(make_msa.out.combine(make_dates_file.out))
 
 	emit:
@@ -144,20 +143,20 @@ workflow create_gtree {
 workflow create_ptree {
 	take:
 		ch_consensus_fasta
-		ch_gene_database_fasta
+		ch_sample_db
+		ch_gene_db
 
 	main:
-		extract_sample_genes(ch_consensus_fasta.combine(ch_gene_database_fasta))
-		ch_sequences = ch_gene_database_fasta.mix(extract_sample_genes.out)
+		extract_sample_genes(ch_consensus_fasta.join(ch_sample_db))
+		make_multifasta(extract_sample_genes.out.mix(ch_gene_db).collect()).set{ch_sequences}
 
 		if (params.results_path){
-			get_background_sequences(Channel.fromPath(params.results_path))
-			ch_sequences = ch_sequences.mix(get_background_sequences.out)
+			get_background_sequences(ch_sequences, Channel.fromPath(params.results_path))
+			ch_sequences = ch_sequences.mix(get_background_sequences.out).collect()
 		} 
 
-		make_multifasta(ch_sequences.collect())
-		make_dates_file(make_multifasta.out)
-		make_msa(make_multifasta.out)
+		make_dates_file(ch_sequences)
+		make_msa(ch_sequences)
 		make_tree(make_msa.out.combine(make_dates_file.out))
 
 	emit:
@@ -172,22 +171,30 @@ workflow global_reference_search {
 		ch_fastqs
 
 	main:
-		ch_global_ref_db = Channel.fromPath(params.reference_database)
-		make_blast_database(ch_global_ref_db).first().set{ch_global_blast_db}
+		// DATABASE SETUP 
+		ch_global_db_full = Channel.fromPath(params.reference_db_full)
+		make_blast_database(ch_global_db_full).first().set{ch_global_db_full_blast}
 
 		// SEARCH REFERENCE DB 
-		run_blastn(ch_contigs.combine(ch_global_ref_db), ch_global_blast_db, Channel.fromPath('NO_FILE').first())
+		run_blastn(ch_contigs.combine(ch_global_db_full), ch_global_db_full_blast, Channel.fromPath('NO_FILE').first())
 
 		// SINGLE REFERENCE MAPPING 
 		map_reads(ch_fastqs.join(run_blastn.out.ref))
 		sort_filter_index_sam(map_reads.out)
 		get_coverage(sort_filter_index_sam.out)
 
+		// GENE DATABASE SETUP 
+		extract_genes_blast(ch_global_db_full)
+		
+
 	emit:
-		ref = run_blastn.out.ref
-		bam = sort_filter_index_sam.out
-		cov = get_coverage.out.main
-		cov_metric = get_coverage.out.metric
+		main = get_coverage.out.metric
+			.join(run_blastn.out.ref)
+			.join(sort_filter_index_sam.out)
+			.join(get_coverage.out.main)
+			.combine(extract_genes_blast.out.vp1)
+			.combine(extract_genes_blast.out.rdrp)
+			.map{ it -> [it[0], it.subList(1,it.size())]}
 }
 
 workflow {
@@ -212,6 +219,8 @@ workflow {
 			error "ERROR BLAST Reference search cannot use bsr (blast score ratio)."
 		}
 
+		sample_list = ch_fastq_input.map{it -> it[0]}.collect().first()
+
 		// QUALITY CONTROL 
 		cutadapt(ch_fastq_input)
 		fastp(cutadapt.out.trimmed_reads)
@@ -224,7 +233,7 @@ workflow {
 		run_kraken(fastp.out.trimmed_reads)
 		
 		// DEHOSTING
-		make_union_database(ch_blastdb_gtype_fasta, ch_blastdb_ptype_fasta)
+		make_union_database(ch_blastdb_gtype_fasta, ch_blastdb_ptype_fasta).first()
 		build_composite_reference(ch_human_ref.combine(make_union_database.out.fasta))
 		dehost_fastq(
 			run_kraken.out.fastq,
@@ -258,27 +267,52 @@ workflow {
 		// GENERATE NEW MERGED REFERENCE
 		merge_fasta_bam(combine_references.out.join(sort_filter_index_sam.out))
 
+		// CALCULATE COVERAGE OF THE SYNTHETIC METHOD 
 		get_coverage(merge_fasta_bam.out.bam)
 
-		ch_best_reference = merge_fasta_bam.out.ref
-		ch_bamfile = merge_fasta_bam.out.bam
-		ch_coverage = get_coverage.out.main
-		val_coverage = get_coverage.out.metric
+		ch_synthetic = get_coverage.out.metric
+					.join(merge_fasta_bam.out.ref)
+					.join(merge_fasta_bam.out.bam)
+					.join(get_coverage.out.main)
+					.combine(genotyping.out.gene_db)
+					.combine(ptyping.out.gene_db)
 
-		// // If parameter passed, use comprehensive reference database to find reference
-		// if (params.reference_database){
+		// If parameter passed, use comprehensive reference database to find reference
+		if (params.reference_db_full){
+
+			// reformat the synthetic channel for comparison purposes 
+			ch_synthetic = ch_synthetic.map{ it -> [it[0], it.subList(1,it.size())]}
 			
-		// 	global_reference_search(assembly.out, dehost_fastq.out.fastq)
+			// perform a BLAST search on the global reference database 
+			global_reference_search(assembly.out, dehost_fastq.out.fastq)
 
-		// 	choices = val_coverage.join(global_reference_search.out.cov_metric).map{
-		// 		name, val1, val2 ->
-		// 			val1 > val2:
-		// 				return 'synthetic'
-		// 			val1 <= val2:
-		// 				return 'database'
-		// 	}.view{"resuult $it"}
+			// make a single comparison channel to compare outputs between both methods 
+			ch_compare = global_reference_search.out.main.join(ch_synthetic, remainder: true)
 
-		// }
+			outfile = file("${params.outdir}/qc/choices.txt")
+
+			ch_compare.map{ name, vals1, vals2 ->
+				if (vals2 == null){
+					outfile.append("${name},${0},${vals1[0]}\n")
+					[name] + vals1.subList(1, vals1.size())
+				}else if (vals1[0] >= vals2[0]){
+					outfile.append("${name},${vals2[0]},${vals1[0]}\n")
+					[name] + vals1.subList(1, vals1.size())
+				}else {
+					outfile.append("${name},${vals2[0]},${vals1[0]}\n")
+					[name] + vals2.subList(1, vals2.size())
+				}
+			}.set{ch_best_coverage}
+
+		}else {
+			ch_best_coverage = ch_synthetic.map{it -> [it[0]] + it.subList(2,it.size())}
+		}
+
+		ch_best_reference = ch_best_coverage.map{it -> [it[0], it[1]]}
+		ch_bamfile = ch_best_coverage.map{it -> [it[0], it[2], it[3]]}
+		ch_coverage = ch_best_coverage.map{it -> [it[0], it[4]]}
+		ch_gene_db_vp1 = ch_best_coverage.map{it -> [it[0], it[5]]}
+		ch_gene_db_rdrp = ch_best_coverage.map{it -> [it[0], it[6]]}
 
 		make_pileup(ch_best_reference.join(ch_bamfile))
 		//create_pileup.out.metrics.collectFile(name: "${params.outdir}/qc/pileups", keepHeader: true, skip: 1)
@@ -299,22 +333,21 @@ workflow {
 		make_consensus(get_common_snps.out.join(ch_best_reference).join(mask_low_coverage.out))
 
 		// GENE-SPECIFIC PHYLOGENETIC TREES
-		create_gtree(make_consensus.out, genotyping.out.gene_db)
-		create_ptree(make_consensus.out, ptyping.out.gene_db)
+		create_gtree(make_consensus.out, ch_gene_db_vp1, genotyping.out.gene_db)
+		create_ptree(make_consensus.out, ch_gene_db_rdrp, ptyping.out.gene_db)
 
 		// CUSTOM QC 
 		run_custom_qc(ch_bamfile.join(ch_best_reference).join(make_consensus.out))
 		run_custom_qc.out.csv.collectFile(name: "${params.outdir}/qc/custom/qc_all.csv", keepHeader: true, skip: 1, newLine:true)
 
-		ch_sequences = make_consensus.out.map{it -> it[1]}
+		make_multifasta(make_consensus.out.map{it -> it[1]}.collect()).set{ch_sequences}
 
 		if (params.results_path){
-			get_background_sequences(Channel.fromPath(params.results_path))
-			ch_sequences = ch_sequences.mix(get_background_sequences.out)
+			get_background_sequences(ch_sequences, Channel.fromPath(params.results_path))
+			ch_sequences = ch_sequences.mix(get_background_sequences.out).collect()
 		} 
 
-		make_multifasta(ch_sequences.collect())
-		make_msa(make_multifasta.out)
+		make_msa(ch_sequences)
 		make_tree(make_msa.out)
 
 		// Collect all the relevant files for MULTIQC
