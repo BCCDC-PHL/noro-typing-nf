@@ -44,7 +44,7 @@ process make_msa {
     publishDir "${params.outdir}/phylo/${custom_dir}/align", pattern: "*fasta" , mode:'copy'
 
     input: 
-    path(multifasta)
+    path(fastas)
 
     output:
     path("${params.run_name}.align.fasta")
@@ -52,7 +52,8 @@ process make_msa {
     script: 
     custom_dir = task.ext.custom_dir ?: 'full_genome'
 	"""
-	mafft --auto --thread ${task.cpus} ${multifasta} > ${params.run_name}.align.fasta
+    cat ${fastas} > multi.fasta &&
+	mafft --auto --thread ${task.cpus} multi.fasta > ${params.run_name}.align.fasta
 	"""
 }
 
@@ -75,7 +76,7 @@ process extract_sample_genes {
     custom_dir = task.ext.custom_dir ?: 'full_genome'
 
 	"""
-    extract_genes.py sample --ref ${blast_gene_db} --query ${consensus} --gene ${gene} --output ${sample_id}_${gene}.fasta 
+    extract_genes.py sample --ref ${blast_gene_db} --query ${consensus} --gene ${gene} --outfasta ${sample_id}_${gene}.fasta 
 	"""
 }
 
@@ -83,17 +84,19 @@ process make_dates_file {
     publishDir "${params.outdir}/phylo/${custom_dir}/tree", pattern: "*" , mode:'copy'
 
     input: 
-    path(multifasta)
+    path(fastas)
 
     output:
     path("${out_name}")
 
     script:
     gene = task.ext.gene ?: ''
-    custom_dir = task.ext.custom_dir ?: 'full_genome'
-    out_name = "${multifasta.simpleName}_dates.tsv"
+    workflow = task.ext.workflow ?: 'global'
+    custom_dir = task.ext.custom_dir ?: 'global'
+    out_name = "${params.run_name}_${workflow}_dates.tsv"
 	"""
-    get_dates.py ${multifasta} --output ${out_name}
+    cat ${fastas} > multi.fasta &&
+    get_dates.py multi.fasta --output ${out_name}
 	"""
 }
 
