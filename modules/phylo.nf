@@ -13,7 +13,7 @@ process make_multifasta {
     
 	"""
 	cat ${sequences} > temp.fasta
-    filter_fasta.py temp.fasta ${params.run_name}_${workflow}_multi.fasta
+    filter_fasta.py main temp.fasta ${params.run_name}_${workflow}_multi.fasta
     rm temp.fasta
 	"""
 
@@ -22,8 +22,9 @@ process get_background_sequences {
     publishDir "${params.outdir}/phylo/${custom_dir}/sequences", pattern: "*fasta" , mode:'copy'
 
     input: 
-	path(results_path)
-
+	path(multifasta)
+    path(results_path)
+    
     output:
     path("${params.run_name}_${custom_dir}_bg.fasta")
 
@@ -32,7 +33,7 @@ process get_background_sequences {
     workflow = task.ext.workflow ?: 'NONE'
     
 	"""
-    get_background_seqs.py --gene ${custom_dir} --outfasta ${params.run_name}_${custom_dir}_bg.fasta ${results_path}
+    get_background_seqs.py --infasta ${multifasta} --gene ${custom_dir} --outfasta ${params.run_name}_${custom_dir}_bg.fasta ${results_path}
 	"""
 }
 
