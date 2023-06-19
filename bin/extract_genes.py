@@ -279,10 +279,14 @@ def main_sample(args):
 	ref_seq_dict = SeqIO.to_dict(SeqIO.parse(args.ref,'fasta'))
 	ref_seq_dict = {x.split(args.header_delim)[args.accno_pos]: y for x,y in ref_seq_dict.items()}
 
+	if qry_seq.count("|") != 4:
+		print("ERROR: Wrong sequence header input specified. Should contain 5 fields total: ID|TYPE|ACCNO|WORKFLOW|EXTRA")
+		sys.exit(1)
+
 	# parse out the reference accession number from the query FASTA file 
 	accno_field = qry_seq.id.split("|")[2]
 
-	if qry_seq.id.split("|")[4] == 'composite':
+	if qry_seq.id.split("|")[3] == 'composite':
 
 		accnos = accno_field.split("_")
 
