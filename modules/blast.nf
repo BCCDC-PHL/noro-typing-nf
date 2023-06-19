@@ -62,7 +62,7 @@ process extract_genes_blast {
 }
 
 process make_blast_database {
-    storeDir "${projectDir}/cache/blast_db/gene_${custom_dir}"
+    storeDir "${projectDir}/cache/blast_db/gene/${custom_dir}"
     
     input:
     path(fasta)
@@ -72,8 +72,8 @@ process make_blast_database {
 
     script:
     workflow = task.ext.workflow ?: ''
-    custom_dir = task.ext.custom_dir ?: 'full'
-    db_name = task.ext.workflow ? "${workflow}_blastdb.fasta" : "reference_db.fasta"
+    custom_dir = task.ext.custom_dir ?: 'global'
+    db_name = task.ext.workflow ? "${workflow}_blastdb.fasta" : "global_database.fasta"
 
     """
     makeblastdb -dbtype nucl -in ${fasta} -out ${db_name}
@@ -82,7 +82,7 @@ process make_blast_database {
 }
 
 process run_self_blast {
-    storeDir "${projectDir}/cache/blast_db/gene_${custom_dir}"
+    storeDir "${projectDir}/cache/blast_db/gene/${custom_dir}"
     
     input:
     path(blast_db)
@@ -110,9 +110,8 @@ process run_blastn {
 
     tag {sample_id}
 
-    publishDir "${params.outdir}/blastn/${workflow}/blast_raw", pattern: "${sample_id}*blastn.tsv" , mode:'copy'
-    publishDir "${params.outdir}/blastn/${workflow}/blast_filtered", pattern: "${sample_id}*filter.tsv" , mode:'copy'
-    publishDir "${params.outdir}/blastn/${workflow}/blast_full", pattern: "${sample_id}*full.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow}/raw", pattern: "${sample_id}*blastn.tsv" , mode:'copy'
+    publishDir "${params.outdir}/blastn/${workflow}/filtered", pattern: "${sample_id}*filter.tsv" , mode:'copy'
     publishDir "${params.outdir}/blastn/${workflow}/final_refs", pattern: "${sample_id}*fasta" , mode:'copy'
 
     input: 
@@ -129,10 +128,10 @@ process run_blastn {
 
     script:
     contig_mode = params.assemble ? "--contig_mode" : "" 
-    workflow = task.ext.workflow ?: 'full'
+    workflow = task.ext.workflow ?: 'global'
     blast_db_name = blast_db[0]
     self_blast = self_blast_scores.name != 'NO_FILE' ? "--ref_scores ${self_blast_scores}" : ''
-    blast_metric = workflow == 'full' ? params.blast_refsearch_metric : params.blast_typing_metric
+    blast_metric = workflow == 'global' ? params.blast_refsearch_metric : params.blast_typing_metric
     
     """
     blastn -num_threads ${task.cpus} -query ${contig_file} -db ${blast_db_name} -outfmt "6 ${params.blast_outfmt}" > ${sample_id}_${workflow}_blastn.tsv &&
@@ -144,6 +143,21 @@ process run_blastn {
     --min_id ${params.min_blast_id} \
     --tsv_out ${sample_id}_${workflow}_blastn_filter.tsv \
     --fasta_out ${sample_id}_${workflow}_ref.fasta 
+
+    if [ ${workflow} == 'global' ] ; then
+        delim=${params.header_delim}
+        pos_type=${params.header_pos_type}
+        pos_accno=${params.header_pos_accno}
+
+        header=`head -n1 ${sample_id}_${workflow}_ref.fasta | cut -c2-`
+        fields=(\${header//\$delim/ })
+
+        newheader=">${sample_id}|\${fields[\$pos_type]}|\${fields[\$pos_accno]}|sample|global"
+        echo \$newheader
+
+        sed -i 1d ${sample_id}_${workflow}_ref.fasta 
+        sed -i 1i"\$newheader" ${sample_id}_${workflow}_ref.fasta 
+    fi
     """
 }
 
@@ -179,35 +193,36 @@ process combine_references {
     function concat_header {
         filename=\$1
         append=\$2
+        newfile=\$3
 
-        header=`head -n1 \$filename`
-        newheader="\$header \$append"
+        old_header=`head -n1 \$filename`
+        full_header="\$old_header \$append"
 
-        sed -i 1d \$filename
-        sed -i 1i"\$newheader" \$filename
+        echo \$full_header > \$newfile
+        sed 1d \$filename >> \$newfile
     }
 
     gfields=(\${gheader//\$delim/ })
     pfields=(\${pheader//\$delim/ })
 
-    newheader="${sample_id}|\${gfields[\$pos_type]}_\${pfields[\$pos_type]}|\${gfields[\$pos_accno]}_\${pfields[\$pos_accno]}|sample"
+    newheader="${sample_id}|\${gfields[\$pos_type]}_\${pfields[\$pos_type]}|\${gfields[\$pos_accno]}_\${pfields[\$pos_accno]}|sample|composite"
     echo \$newheader
 
     if [ ! -z \$gheader ]; then 
-        concat_header ${gtype_ref} \${newheader}
+        concat_header ${gtype_ref} \${newheader} gtype_rename.fasta
     fi
     if [ ! -z \$pheader ]; then 
-        concat_header ${ptype_ref} \${newheader}
+        concat_header ${ptype_ref} \${newheader} ptype_rename.fasta
     fi
 
     if [ -z \$gheader ] && [ ! -z \$pheader ]; then
-        cp ${ptype_ref} ${sample_id}.ref.final.fasta
+        cp ptype_rename.fasta ${sample_id}.ref.final.fasta
     elif [ -z \$pheader ] && [ ! -z \$gheader ]; then
-        cp ${gtype_ref} ${sample_id}.ref.final.fasta
-    elif [ \$gheader == \$pheader ] ; then 
-        cp ${gtype_ref} ${sample_id}.ref.final.fasta
+        cp gtype_rename.fasta ${sample_id}.ref.final.fasta
+    elif [ \${gfields[\$pos_accno]} == \${pfields[\$pos_accno]} ] ; then 
+        cp gtype_rename.fasta ${sample_id}.ref.final.fasta
     else
-        cat ${gtype_ref} ${ptype_ref} > ${sample_id}.ref.final.fasta
+        cat gtype_rename.fasta ptype_rename.fasta > ${sample_id}.ref.final.fasta
     fi 
     """
 }
