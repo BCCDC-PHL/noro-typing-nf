@@ -83,16 +83,21 @@ def filter_alignments(blast_results, score_column, min_cov, min_id):
 		# best_scores = blast_results[['qseqid', score_column]].groupby('qseqid')[score_column].nlargest(5).reset_index()[['qseqid',score_column]]
 		# blast_results = blast_results.nlargest(5, score_column)
 
-		idxmax = blast_results.groupby('type')['composite'].idxmax()
-		filtered = blast_results.loc[idxmax].drop_duplicates('sseqid')
+		# group by contig and take only the best result
+		idxmax = blast_results.groupby(['qseqid'])['composite'].idxmax()
+		filtered = blast_results.loc[idxmax]
+
+		# group by genotype / ptype and take only the best result (to avoid redundant entries)
+		idxmax = filtered.groupby(['type'])['composite'].idxmax()
+		filtered = filtered.loc[idxmax].drop_duplicates('sseqid')
 		filtered = filtered.sort_values('composite', ascending=False).reset_index(drop=True)
 
 		if filtered.shape[0] > 3:
 			filtered = filtered.loc[0:3]
-		elif filtered.shape[0] < 3:
-			rows_to_add = 3 - filtered.shape[0]
-			na_df = pd.DataFrame([[None]*filtered.shape[1]] * rows_to_add, columns=filtered.columns)
-			filtered = pd.concat([filtered, na_df])
+		# elif filtered.shape[0] < 3:
+		# 	rows_to_add = 3 - filtered.shape[0]
+		# 	na_df = pd.DataFrame([[None]*filtered.shape[1]] * rows_to_add, columns=filtered.columns)
+		# 	filtered = pd.concat([filtered, na_df])
 
 		# blast_results = pd.merge(blast_results, best_scores, on=['qseqid', score_column])
 		# blast_results = blast_results.sort_values(['qseqid', score_column],axis=0)
@@ -127,10 +132,10 @@ def write_best_sequence(blast_results, seq_path, fasta_out, mode):
 	# Open contigs FASTA and load seqs into dict (key=seq header)
 	seqs = parse_fasta(seq_path)
 
-	ids = [blast_results[blast_field]] if not isinstance(blast_results[blast_field], list) else blast_results[blast_field]
+	name = blast_results[blast_field] if isinstance(blast_results[blast_field], str) else blast_results[blast_field].tolist()[0]
 	# extract the top hit from the relevant sequence file 
-	print( blast_results[blast_field])
-	final_refs = {name : seqs[name] for name in ids}
+
+	final_refs = {name : seqs[name]}
 
 	result = write_fasta(final_refs, fasta_out)
 
