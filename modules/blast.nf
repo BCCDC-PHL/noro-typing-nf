@@ -20,7 +20,7 @@ process prep_database {
     workflow = task.ext.workflow ?: 'full'
     custom_dir = task.ext.custom_dir ?: 'global'
     """
-    filter_fasta.py \
+    filter_fasta.py main \
     --header_delim ${params.header_delim} \
     --header_pos_accno ${params.header_pos_accno} \
     --header_pos_type ${params.header_pos_type} \
@@ -39,15 +39,20 @@ process extract_genes_blast {
     path(blast_db_fasta)
 
     output:
-    path("${outname}*.fasta"), emit: db, optional: true
+    // Format A: used for gene-specific workflows 
+    path("*gene*.fasta"), emit: db
+    path("*gene*.yaml"), emit: pos
+    // Format B: used for global / full-length workflow
     path("*vp1.fasta"), emit: vp1, optional: true
     path("*rdrp.fasta"), emit: rdrp, optional: true
-    path("${outname}*.yaml"), emit: positions, optional: true
+    path("*vp1_pos.yaml"), emit: pos_vp1, optional: true
+    path("*rdrp_pos.yaml"), emit: pos_rdrp, optional: true
 
     script:
     custom_dir = task.ext.custom_dir ?: 'global'
     gene = task.ext.gene ?: 'all'
-    outname = task.ext.gene ? "${blast_db_fasta.simpleName}_${gene}" : "${blast_db_fasta.simpleName}_{gene}"
+    blastname = "${blast_db_fasta.simpleName}"
+    outname = task.ext.gene ? "${blastname}_gene_${gene}" : "${blastname}_gene_{gene}"
 
     """
     extract_genes.py database \

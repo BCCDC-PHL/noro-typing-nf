@@ -85,6 +85,7 @@ workflow genotyping {
 		main = run_blastn.out.main
 		filter = run_blastn.out.filter
 		gene_db = extract_genes_blast.out.db
+		db_pos = prep_database.out.combine(extract_genes_blast.out.pos)
 }
 
 workflow ptyping {
@@ -114,15 +115,16 @@ workflow ptyping {
 		main = run_blastn.out.main
 		filter = run_blastn.out.filter
 		gene_db = extract_genes_blast.out.db
+		db_pos = prep_database.out.combine(extract_genes_blast.out.pos)
 }
 
 workflow create_gtree {
 	take:
 		ch_consensus_fasta
-		ch_sample_db
+		ch_sample_db_pos
 		ch_gene_db
 	main:
-		extract_sample_genes(ch_consensus_fasta.join(ch_sample_db))
+		extract_sample_genes(ch_consensus_fasta.join(ch_sample_db_pos))
 		make_multifasta(extract_sample_genes.out.mix(ch_gene_db).collect()).set{ch_sequences}
 
 		if (params.results_path){
@@ -143,11 +145,11 @@ workflow create_gtree {
 workflow create_ptree {
 	take:
 		ch_consensus_fasta
-		ch_sample_db
+		ch_sample_db_pos
 		ch_gene_db
 
 	main:
-		extract_sample_genes(ch_consensus_fasta.join(ch_sample_db))
+		extract_sample_genes(ch_consensus_fasta.join(ch_sample_db_pos))
 		make_multifasta(extract_sample_genes.out.mix(ch_gene_db).collect()).set{ch_sequences}
 
 		if (params.results_path){
@@ -192,8 +194,8 @@ workflow global_reference_search {
 			.join(run_blastn.out.ref)
 			.join(sort_filter_index_sam.out)
 			.join(get_coverage.out.main)
-			.combine(extract_genes_blast.out.vp1)
-			.combine(extract_genes_blast.out.rdrp)
+			.combine(ch_global_db_full.combine(extract_genes_blast.out.pos_vp1))
+			.combine(ch_global_db_full.combine(extract_genes_blast.out.pos_rdrp))
 			.map{ it -> [it[0], it.subList(1,it.size())]}
 }
 
@@ -274,8 +276,8 @@ workflow {
 					.join(merge_fasta_bam.out.ref)
 					.join(merge_fasta_bam.out.bam)
 					.join(get_coverage.out.main)
-					.combine(genotyping.out.gene_db)
-					.combine(ptyping.out.gene_db)
+					.combine(genotyping.out.db_pos)
+					.combine(ptyping.out.db_pos)
 
 		// If parameter passed, use comprehensive reference database to find reference
 		if (params.reference_db_full){
@@ -311,8 +313,8 @@ workflow {
 		ch_best_reference = ch_best_coverage.map{it -> [it[0], it[1]]}
 		ch_bamfile = ch_best_coverage.map{it -> [it[0], it[2], it[3]]}
 		ch_coverage = ch_best_coverage.map{it -> [it[0], it[4]]}
-		ch_gene_db_vp1 = ch_best_coverage.map{it -> [it[0], it[5]]}
-		ch_gene_db_rdrp = ch_best_coverage.map{it -> [it[0], it[6]]}
+		ch_gene_db_vp1 = ch_best_coverage.map{it -> [it[0], it[5], it[6]]}
+		ch_gene_db_rdrp = ch_best_coverage.map{it -> [it[0], it[7], it[8]]}
 
 		make_pileup(ch_best_reference.join(ch_bamfile))
 		//create_pileup.out.metrics.collectFile(name: "${params.outdir}/qc/pileups", keepHeader: true, skip: 1)
@@ -333,8 +335,8 @@ workflow {
 		make_consensus(get_common_snps.out.join(ch_best_reference).join(mask_low_coverage.out))
 
 		// GENE-SPECIFIC PHYLOGENETIC TREES
-		create_gtree(make_consensus.out, ch_gene_db_vp1, genotyping.out.gene_db)
-		create_ptree(make_consensus.out, ch_gene_db_rdrp, ptyping.out.gene_db)
+		create_gtree(make_consensus.out, ch_gene_db_vp1, ch_blastdb_gtype_fasta)
+		create_ptree(make_consensus.out, ch_gene_db_rdrp, ch_blastdb_ptype_fasta)
 
 		// CUSTOM QC 
 		run_custom_qc(ch_bamfile.join(ch_best_reference).join(make_consensus.out))
