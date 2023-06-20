@@ -66,7 +66,7 @@ process extract_sample_genes {
     publishDir "${params.outdir}/phylo/${custom_dir}", pattern: "*.fasta" , mode:'copy'
 
     input: 
-    tuple val(sample_id), path(consensus), path(blast_gene_db)
+    tuple val(sample_id), path(consensus), path(blast_gene_db), path(blast_gene_pos)
 
     output:
     path("${sample_id}*.fasta")
@@ -76,7 +76,7 @@ process extract_sample_genes {
     custom_dir = task.ext.custom_dir ?: 'full_genome'
 
 	"""
-    extract_genes.py sample --ref ${blast_gene_db} --query ${consensus} --gene ${gene} --outfasta ${sample_id}_${gene}.fasta 
+    extract_genes.py sample --ref ${blast_gene_db} --query ${consensus} --positions ${blast_gene_pos} --gene ${gene} --outfasta ${sample_id}_${gene}.fasta 
 	"""
 }
 
