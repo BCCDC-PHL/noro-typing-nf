@@ -36,6 +36,8 @@ def parse_blast(filepath, ref_scores, header_delim, header_pos_type):
 		# compute the coverage column
 		# blast_df['coverage'] = blast_df['length'] * 100 / blast_df['slen']
 		blast_df['prop_covered'] = blast_df['length'] * 100 / blast_df['slen']
+		blast_df['prop_covered'] = blast_df['prop_covered'].map(lambda x : x if x <= 100 else 100)   # to prevent coverages over 100%
+
 		blast_df['type'] = blast_df['sseqid'].str.split(header_delim).str[header_pos_type]
 
 		blast_df['cov'] = blast_df['qseqid'].str.split("_").str[-1].astype(float)
@@ -69,7 +71,7 @@ def filter_alignments(blast_results, score_column, min_cov, min_id):
 	try: 
 		blast_results = blast_results.drop_duplicates()
 
-		score_cols = ['cov', 'bitscore', 'prop_covered']
+		score_cols = ['bitscore', 'pident']
 
 		if score_column not in score_cols:
 			score_cols += [score_column]
@@ -88,12 +90,12 @@ def filter_alignments(blast_results, score_column, min_cov, min_id):
 		filtered = blast_results.loc[idxmax]
 
 		# group by genotype / ptype and take only the best result (to avoid redundant entries)
-		idxmax = filtered.groupby(['type'])['composite'].idxmax()
-		filtered = filtered.loc[idxmax].drop_duplicates('sseqid')
+		# idxmax = filtered.groupby(['type'])['composite'].idxmax()
+		# filtered = filtered.loc[idxmax].drop_duplicates('sseqid')
 		filtered = filtered.sort_values('composite', ascending=False).reset_index(drop=True)
 
 		if filtered.shape[0] > 3:
-			filtered = filtered.loc[0:3]
+			filtered = filtered.iloc[0:3,:]
 		# elif filtered.shape[0] < 3:
 		# 	rows_to_add = 3 - filtered.shape[0]
 		# 	na_df = pd.DataFrame([[None]*filtered.shape[1]] * rows_to_add, columns=filtered.columns)
