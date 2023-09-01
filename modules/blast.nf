@@ -81,6 +81,9 @@ process make_blast_database {
     db_name = task.ext.workflow ? "${workflow}_blastdb.fasta" : "global_database.fasta"
 
     """
+    printf -- "- process_name: blast\\n" > blast_provenance.yml
+    printf -- "  tool_name: blastn\\n  tool_version: \$(blastn -version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> blast_provenance.yml
+
     makeblastdb -dbtype nucl -in ${fasta} -out ${db_name}
     cp ${fasta} ${db_name}
     """

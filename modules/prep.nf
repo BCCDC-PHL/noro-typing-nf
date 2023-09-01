@@ -1,3 +1,23 @@
+process hash_files {
+
+    tag { sample_id }
+
+    input:
+    tuple  val(sample_id), path(files_to_hash), val(file_type)
+
+    output:
+    tuple  val(sample_id), path("${sample_id}_${file_type}.sha256.csv"), emit: csv
+    tuple  val(sample_id), path("${sample_id}_${file_type}_provenance.yml"), emit: provenance
+
+    script:
+    """
+    shasum -a 256 ${files_to_hash} | tr -s ' ' ',' > ${sample_id}_${file_type}.sha256.csv
+    while IFS=',' read -r hash filename; do
+        printf -- "- input_filename: \$filename\\n  input_path: \$(realpath \$filename)\\n  sha256: \$hash\\n" >> ${sample_id}_${file_type}_provenance.yml
+    done < ${sample_id}_${file_type}.sha256.csv
+    """
+}
+
 process make_union_database {
     storeDir "${projectDir}/cache/blast_db/union_db"
 
@@ -103,6 +123,9 @@ process run_kraken {
     path("${sample_id}.kraken.report"), emit: report
 
     """
+    printf -- "- process_name: kraken2\\n" > ${sample_id}_kraken2_provenance.yml
+    printf -- "  tool_name: kraken2\\n  tool_version: \$(kraken2 --version | head -n1 | cut -d' ' -f3)\\n" >> ${sample_id}_kraken2_provenance.yml
+
     kraken2 --confidence 0.1 \
     --threads ${task.cpus} --db ${params.kraken_db} \
     --paired ${reads_1} ${reads_2} \

@@ -33,6 +33,9 @@ process map_reads {
     tuple val(sample_id), path("${sample_id}.sam")
 
 	"""
+    printf -- "- process_name: map_reads\\n" > ${sample_id}_bwa_provenance.yml
+    printf -- "  tool_name: bwa\\n  tool_version: \$(bwa 2>&1 | head -n3 | tail -n1 | cut -d' ' -f2)\\n" >> ${sample_id}_bwa_provenance.yml
+
     bwa index ${reference}
 	bwa mem -t ${task.cpus} ${reference} ${reads_1} ${reads_2} > ${sample_id}.sam
 	"""
@@ -48,9 +51,14 @@ process sort_filter_index_sam {
 
     output:
     tuple val(sample_id), path("${sample_id}.sorted.bam"), path("${sample_id}*bai")
+
     script:
     workflow = task.ext.workflow ? "_${task.ext.workflow}" : "_synthetic"
+
 	"""
+    printf -- "- process_name: sort_filter_index_sam\\n" > ${sample_id}_samtools_provenance.yml
+    printf -- "  tool_name: samtools\\n  tool_version: \$(samtools --version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> ${sample_id}_samtools_provenance.yml
+
 	samtools view -f 3 -F 2828 -q 30 -h ${samfile} | samtools sort -o ${sample_id}.sorted.bam 
     samtools index ${sample_id}.sorted.bam 
 	"""

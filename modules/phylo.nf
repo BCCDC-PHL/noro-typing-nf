@@ -52,6 +52,9 @@ process make_msa {
     script: 
     custom_dir = task.ext.custom_dir ?: 'full_genome'
 	"""
+    printf -- "- process_name: mafft\\n" > mafft_provenance.yml
+    printf -- "  tool_name: mafft\\n  tool_version: \$(mafft --version 2>&1 )\\n" >> mafft_provenance.yml
+
     cat ${fastas} > multi.fasta &&
 	mafft --auto --thread ${task.cpus} multi.fasta > ${params.run_name}.align.fasta
 	"""
@@ -119,6 +122,10 @@ process make_tree {
     alignment = infiles.size() == 2 ? infiles[0] : infiles
     dates = infiles.size() == 2 ? "--date ${infiles[1]}" : ''
 	"""
+    printf -- "- process_name: iqtree\\n" > iqtree_provenance.yml
+    printf -- "  tool_name: iqtree\\n  tool_version: \$(iqtree --version 2>&1 | head -n1 | cut -d' ' -f4)\\n" >> iqtree_provenance.yml
+
+
     iqtree -T ${task.cpus} -m GTR -s ${alignment} ${dates} --prefix ${params.run_name}_${workflow}
     mkdir -p ${params.run_name}_iqtree
     mv ${params.run_name}_${workflow}* ${params.run_name}_iqtree
