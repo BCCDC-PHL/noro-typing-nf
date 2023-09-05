@@ -8,8 +8,8 @@ import java.time.LocalDateTime
 
 nextflow.enable.dsl = 2
 
-include { build_composite_reference; dehost_fastq } from './modules/prep.nf'
-include { prep_database; make_blast_database; extract_genes_blast; run_self_blast; run_blastn; run_blastx} from './modules/blast.nf'
+include { build_composite_reference; dehost_fastq } from '../modules/prep.nf'
+include { prep_database; make_blast_database; extract_genes_blast; run_self_blast; run_blastn; run_blastx} from '../modules/blast.nf'
 
 
 workflow genotyping {

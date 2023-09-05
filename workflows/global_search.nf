@@ -8,12 +8,12 @@ import java.time.LocalDateTime
 
 nextflow.enable.dsl = 2
 
-include { prep_database; make_blast_database; extract_genes_blast; run_self_blast; run_blastn; run_blastx; combine_references} from './modules/blast.nf'
+include { prep_database; make_blast_database; extract_genes_blast; run_self_blast; run_blastn; run_blastx; combine_references} from '../modules/blast.nf'
 //include { p_make_blast_database; p_run_self_blast; p_run_blastn; p_filter_alignments; p_get_best_references; p_run_blastx } from './modules/p_blast.nf'
-include { assembly } from './modules/assembly.nf'
-include { create_fasta_index; map_reads; sort_filter_index_sam; merge_fasta_bam} from './modules/mapping.nf'
-include { run_freebayes; run_mpileup ; get_common_snps } from './modules/variant_calling.nf'
-include { get_coverage; plot_coverage; make_pileup} from "./modules/coverage.nf"
+include { assembly } from '../modules/assembly.nf'
+include { create_fasta_index; map_reads; sort_filter_index_sam; merge_fasta_bam} from '../modules/mapping.nf'
+include { run_freebayes; run_mpileup ; get_common_snps } from '../modules/variant_calling.nf'
+include { get_coverage; plot_coverage; make_pileup} from "../modules/coverage.nf"
 
 
 workflow global_reference_search {
