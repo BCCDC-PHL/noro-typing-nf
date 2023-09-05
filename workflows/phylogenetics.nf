@@ -8,7 +8,7 @@ import java.time.LocalDateTime
 
 nextflow.enable.dsl = 2
 
-include { make_multifasta; get_background_sequences; make_msa; make_dates_file; make_tree; extract_sample_genes} from './modules/phylo.nf'
+include { make_multifasta; get_background_sequences; make_msa; make_dates_file; make_tree; extract_sample_genes} from '../modules/phylo.nf'
 
 workflow create_gtree {
 	take:
