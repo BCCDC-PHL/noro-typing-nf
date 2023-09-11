@@ -10,7 +10,7 @@ nextflow.enable.dsl = 2
 
 // include { pipeline_provenance } from './modules/provenance.nf'
 // include { collect_provenance } from './modules/provenance.nf'
-include { fastQC; fastq_check; run_quast; run_qualimap; run_custom_qc} from './modules/qc.nf'
+include { fastQC; fastq_check; run_quast; run_qualimap; run_custom_qc; make_typing_report } from './modules/qc.nf'
 include { make_union_database; cutadapt; fastp; run_kraken } from './modules/prep.nf' 
 include { build_composite_reference; dehost_fastq } from './modules/prep.nf'
 include { combine_references} from './modules/blast.nf'
@@ -23,9 +23,8 @@ include { make_multifasta; get_background_sequences; make_msa; make_dates_file; 
 include { multiqc } from './modules/multiqc.nf'
 
 
-include {genotyping ; ptyping } from './workflows/typing.nf'
+include {genotyping ; ptyping ; global_reference_search } from './workflows/typing.nf'
 include {create_gtree ; create_ptree } from './workflows/phylogenetics.nf'
-include {global_reference_search } from './workflows/global_search.nf'
 
 println "HELLO. STARTING NOROVIRUS METAGENOMICS PIPELINE."
 println "${LocalDateTime.now()}"
@@ -83,11 +82,13 @@ workflow {
 			error "ERROR BLAST Reference search cannot use bsr (blast score ratio)."
 		}
 
-		sample_list = ch_fastq_input.map{it -> it[0]}.collect().first()
-
+		ch_sample_list = ch_fastq_input.map{it -> it[0]}.collectFile(name: "${params.outdir}/sample-list.txt", newLine: true)
+		//ch_sample_list = Channel.from("${params.outdir}/sample-list.txt").first()
+		
 		// READ TRIMMING AND FILTERING 
-		cutadapt(ch_fastq_input)
-		fastp(cutadapt.out.trimmed_reads)
+		fastp(ch_fastq_input)
+		cutadapt(fastp.out.trimmed_reads)
+		
 		
 		// FASTQ QUALITY CONTROL 
 		fastQC(fastp.out.trimmed_reads)
@@ -115,10 +116,6 @@ workflow {
 		// GENOTYPING / PTYPING 
 		genotyping(assembly.out, ch_blastdb_gtype_fasta)
 		ptyping(assembly.out, ch_blastdb_ptype_fasta)
-
-		// Collect typing results 
-		genotyping.out.filter.collectFile(name: "${params.outdir}/blastn/final/gtypes.tsv", keepHeader: true, skip: 1)
-		ptyping.out.filter.collectFile(name: "${params.outdir}/blastn/final/ptypes.tsv", keepHeader: true, skip: 1)
 
 		// Synthesize new reference from scratch
 		// COMBINE REFERENCES
@@ -152,6 +149,8 @@ workflow {
 			
 			// perform a BLAST search on the global reference database 
 			global_reference_search(assembly.out, dehost_fastq.out.fastq)
+			ch_global_blast_results = global_reference_search.out.blast_collect
+			
 
 			// make a single comparison channel to compare outputs between both methods 
 			ch_compare = global_reference_search.out.main.join(ch_synthetic, remainder: true)
@@ -160,20 +159,22 @@ workflow {
 
 			ch_compare.map{ name, vals1, vals2 ->
 				if (vals2 == null){
-					outfile.append("${name},${0},${vals1[0]}\n")
-					[name] + vals1.subList(1, vals1.size())
+					metrics = "${name},${0},${vals1[0]},global\n"
+					[name] + vals1.subList(1, vals1.size()) + [metrics]
 				}else if (vals1[0] >= vals2[0]){
-					outfile.append("${name},${vals2[0]},${vals1[0]}\n")
-					[name] + vals1.subList(1, vals1.size())
+					metrics = "${name},${vals2[0]},${vals1[0]},global\n"
+					[name] + vals1.subList(1, vals1.size()) + [metrics]
 				}else {
-					outfile.append("${name},${vals2[0]},${vals1[0]}\n")
-					[name] + vals2.subList(1, vals2.size())
+					metrics = "${name},${vals2[0]},${vals1[0]},composite\n"
+					[name] + vals2.subList(1, vals2.size()) + [metrics]
 				}
 			}.set{ch_best_coverage}
 
 		}else {
-			ch_best_coverage = ch_synthetic.map{it -> [it[0]] + it.subList(2,it.size())}
+			ch_best_coverage = ch_synthetic.map{it -> [it[0]] + it.subList(2,it.size()) + ["${it[0]},${it[1]},NA"]}
+			ch_global_blast_results = Channel.from('NO_FILE').first()
 		}
+
 
 		// Unpack best chosen reference, bamfile, coverage bed file, and gene databases
 		ch_best_reference = ch_best_coverage.map{it -> [it[0], it[1]]}
@@ -181,6 +182,7 @@ workflow {
 		ch_coverage = ch_best_coverage.map{it -> [it[0], it[4]]}
 		ch_gene_db_vp1 = ch_best_coverage.map{it -> [it[0], it[5], it[6]]}
 		ch_gene_db_rdrp = ch_best_coverage.map{it -> [it[0], it[7], it[8]]}
+		ch_best_method = ch_best_coverage.map{it -> it[9]}.collectFile(name: "${params.outdir}/${params.run_name}-best-method.csv", newLine: true)
 
 		make_pileup(ch_best_reference.join(ch_bamfile))
 		//create_pileup.out.metrics.collectFile(name: "${params.outdir}/qc/pileups", keepHeader: true, skip: 1)
@@ -206,7 +208,8 @@ workflow {
 
 		// CUSTOM QC 
 		run_custom_qc(ch_bamfile.join(ch_best_reference).join(make_consensus.out))
-		run_custom_qc.out.csv.collectFile(name: "${params.outdir}/qc/custom/qc_all.csv", keepHeader: true, skip: 1, newLine:true)
+		ch_qc_all = run_custom_qc.out.csv.collectFile(name: "${params.outdir}/qc/custom/qc_all.csv", keepHeader: true, skip: 1)
+		//ch_qc_all = Channel.from("${params.outdir}/qc/custom/qc_all.csv").first()
 
 		// Create multifasta of full-length sequences for final seqence analysis 
 		make_multifasta(make_consensus.out.map{it -> it[1]}.collect()).set{ch_sequences}
@@ -222,6 +225,15 @@ workflow {
 
 		// Make a phylogenetic tree using full-length sequences
 		make_tree(make_msa.out)
+
+		// Make a master output report 
+		make_typing_report(
+			ch_sample_list,
+			ch_qc_all,
+			genotyping.out.blast_collect,
+			ptyping.out.blast_collect,
+			ch_global_blast_results
+		)
 
 		// Collect all the relevant files for MULTIQC
 		ch_multiqc_inputs = Channel.empty()
@@ -239,5 +251,4 @@ workflow {
 		// ch_provenance = ch_provenance.join(cutadapt.out.provenance).map{ it -> [it[0], it[1] << it[2]] }
 		// ch_provenance = ch_provenance.join(ch_fastq_input.map{ it -> it[0] }.combine(ch_pipeline_provenance)).map{ it -> [it[0], it[1] << it[2]] }
 		// collect_provenance(ch_provenance)
-
 }

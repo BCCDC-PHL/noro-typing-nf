@@ -40,7 +40,7 @@ def make_qc_plot(depth_pos, n_density, samplename, window=200):
     plt.savefig(samplename + '.depth.png')
 
 def read_depth_file(bamfile):
-    p = subprocess.Popen(['samtools', 'depth', '-a', '-d', '0', bamfile],
+    p = subprocess.Popen(['samtools', 'depth', '-a', bamfile],
                        stdout=subprocess.PIPE)
     out, err = p.communicate()
     counter = 0
@@ -160,11 +160,11 @@ def run_qc(args):
                 'depth_max'    : "{:.2f}".format(quantiles[4]),
                 'depth_mean'   : "{:.2f}".format(quantiles[5]),
                 'pct_N_bases' : "{:.2f}".format(pct_N_bases),
-            f'pct_covered_{args.min_depth}' : "{:.2f}".format(pct_covered_bases), 
-            'longest_no_N_run' : largest_N_gap,
-            'num_aligned_reads' : num_reads,
-            #    'fasta': args.consensus, 
-            #     'bam' : args.bam,
+                f'pct_covered_{args.min_depth}' : "{:.2f}".format(pct_covered_bases), 
+                'longest_no_N_run' : largest_N_gap,
+                'num_aligned_reads' : num_reads,
+                #    'fasta': args.consensus, 
+                #     'bam' : args.bam,
                 'qc_pass' : qc_pass}
 
     df = pd.DataFrame(qc_line, index=[0])
