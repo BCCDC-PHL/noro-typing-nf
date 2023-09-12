@@ -93,7 +93,7 @@ workflow {
 		// FASTQ QUALITY CONTROL 
 		fastQC(fastp.out.trimmed_reads)
 		fastq_check(fastp.out.trimmed_reads)
-		fastq_check.out.formatted.collectFile(name: "${params.outdir}/fastq_qual/fastq_stats.tsv", keepHeader: true, skip: 1)
+		fastq_check.out.formatted.collectFile(name: "${params.outdir}/qc/fastx/fastq_stats.tsv", keepHeader: true, skip: 1)
 		
 		// KRAKEN FILTERING
 		run_kraken(fastp.out.trimmed_reads)

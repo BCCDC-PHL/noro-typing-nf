@@ -110,9 +110,9 @@ process run_kraken {
 
     conda "${projectDir}/environments/kraken.yaml"
 
-    publishDir path: "${params.outdir}/filtering/kraken/reports", pattern: "${sample_id}.kraken.report", mode: "copy"
-    publishDir path: "${params.outdir}/filtering/kraken/output", pattern: "${sample_id}.kraken.out", mode: "copy"
-    publishDir path: "${params.outdir}/filtering/kraken/filtered", pattern: "${sample_id}*kfilter.fastq.gz"
+    publishDir path: "${params.outdir}/preprocess/kraken/reports", pattern: "${sample_id}.kraken.report", mode: "copy"
+    publishDir path: "${params.outdir}/preprocess/kraken/output", pattern: "${sample_id}.kraken.out", mode: "copy"
+    publishDir path: "${params.outdir}/preprocess/kraken/filtered", pattern: "${sample_id}*kfilter.fastq.gz"
 
     input: 
     tuple val(sample_id), path(reads_1), path(reads_2)
@@ -197,9 +197,9 @@ process dehost_fastq {
 
     tag {sample_id}
 
-    publishDir path: "${params.outdir}/dehosted/", pattern: "${sample_id}*fastq.gz"
-    publishDir path: "${params.outdir}/dehosted/bam", pattern: "${sample_id}*bam"
-    publishDir path: "${params.outdir}/dehosted/metrics", pattern: "${sample_id}*_metrics.txt", mode: "copy"
+    publishDir path: "${params.outdir}/preprocess/dehosted/", pattern: "${sample_id}*fastq.gz"
+    publishDir path: "${params.outdir}/preprocess/dehosted/bam", pattern: "${sample_id}*bam"
+    publishDir path: "${params.outdir}/preprocess/dehosted/metrics", pattern: "${sample_id}*_metrics.txt", mode: "copy"
 
     input:
     tuple val(sample_id), path(reads_1), path(reads_2)
