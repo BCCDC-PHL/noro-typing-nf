@@ -24,9 +24,9 @@ import sys, os, re
 from glob import glob
 import gzip
 
-run_name = 'January 31st'
+run_name = 'May 1st'
 base_path = f'/home/john.palmer/work/norovirus/'
-results_path = f'{base_path}/results-mar-8-4'
+results_path = f'{base_path}/results-may-1-comp'
 
 def custom_wrap(iter, delim='<br>', per_line=5):
     if len(iter) == 1: 
@@ -49,6 +49,7 @@ def prep_hist_continuous(values, names, bin_size=1):
     df['bin'] = pd.cut(df['values'], bins=np.arange(0,df['values'].max() + bin_size, bin_size))
     hist_df = df['bin'].value_counts().reset_index()
     hist_df = hist_df.rename({'index': 'value','bin':'frequency'},axis=1)
+    print(hist_df['frequency'])
     hist_df['frequency'] = hist_df['frequency'].astype(int)
     
     def get_ids(val):
@@ -93,11 +94,11 @@ def count_bins(posx, upper=7500, interval=250):
 #| label: Genotype Calls
 #| fig-cap: "Final genotype calls for all samples"
 
-blastn_path = f'{results_path}/blastn/gtype/full'
+blastn_path = f'{results_path}/blastn/ptype/full'
 
 rows = []
 
-blast_files = glob(f'{results_path}/blastn/gtype/full/*filter_full.tsv')
+blast_files = glob(f'{results_path}/blastn/ptype/full/*filter_full.tsv')
 
 for blast_file in blast_files:
     df = pd.read_csv(blast_file, sep='\t')
@@ -106,8 +107,11 @@ for blast_file in blast_files:
     df['type_strain'] = df.genotype + "-" + df.strain
 
     row = [df['sample_name'][0]]
-    for i in range(3):
-        row += df[['type_strain','prop_covered','bsr']].iloc[0].tolist()
+    
+    top_three = df[['type_strain','prop_covered','bitscore']].iloc[0:3].values.tolist()
+    top_three = [y for x in top_three for y in x]
+
+    row += top_three
     rows.append(row)
 
 col_names = "sample_name first_call first_cover first_score second_call second_cover second_score third_call third_cover third_score".split()
@@ -118,9 +122,11 @@ midx = pd.MultiIndex.from_tuples(vals, names=['call','values'])
 
 os.environ['BLAST_PATH'] = blast_files[0]
 
-gtype_calls = pd.DataFrame(rows, columns=col_names).sort_values('sample_name').reset_index(drop=True)
+gtype_calls = pd.DataFrame(rows, columns=col_names)
+gtype_calls['sample_name'] = gtype_calls['sample_name'].astype(str)
+gtype_calls = gtype_calls.sort_values('sample_name').reset_index(drop=True)
 gtype_calls.columns = midx
-gtype_calls
+display(gtype_calls)
 ```
 
 ```{python}
@@ -364,6 +370,7 @@ MAEAPDETIQQFMALTNVSHNIAVQYLSEFGDLNEAL--------------REEAH
 
 # Load a tree and link it to an alignment.
 t = PhyloTree("(((seqA,seqB),seqC),seqD);", alignment=fasta_txt, alg_format="fasta")
+t.render("%%inline", tree_style=TreeStyle())
 #t.link_to_alignment()
 ```
 
