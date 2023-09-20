@@ -61,7 +61,10 @@ def main():
 
 	seqs = list(SeqIO.parse(args.outfile, 'fasta'))
 
-	seqs = rename(seqs, header_dict)
+	#seqs = rename(seqs, header_dict)
+	for s in seqs:
+		s.description = s.id
+		s.name = s.id 
 
 	SeqIO.write(seqs, args.outfile, 'fasta')
 
