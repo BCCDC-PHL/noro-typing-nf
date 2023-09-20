@@ -66,6 +66,7 @@ process fastp {
       -O ${sample_id}_R2.trim.fastq.gz \
       -j ${sample_id}.fastp.json \
       -h ${sample_id}.fastp.html \
+      # --umi_loc=per_read --umi_len=8 \
       --detect_adapter_for_pe && 
     fastp_json_to_csv.py ${sample_id}.fastp.json > ${sample_id}_fastp.csv
     """
