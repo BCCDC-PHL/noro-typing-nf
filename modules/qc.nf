@@ -68,6 +68,8 @@ process run_qualimap {
     
     tag { sample_id }
 
+    errorStrategy 'ignore'
+
     conda 'qualimap'
     
     publishDir path: "${params.outdir}/qc/mapping/pdf", pattern: "${sample_id}*pdf", mode: "copy"
@@ -130,6 +132,7 @@ process run_mapping_qc {
 }
 
 process run_custom_qc {
+    errorStrategy 'ignore'
     tag { sample_id }
 
     publishDir "${params.outdir}/qc/custom/csv", pattern: "${sample_id}*csv", mode: 'copy'
@@ -147,4 +150,37 @@ process run_custom_qc {
     """
     qc.py --outfile ${sample_id}.qc.csv --sample ${sample_id} --ref ${ref} --bam ${bam} --consensus ${consensus}
     """
+}
+
+process make_typing_report { 
+    
+    publishDir "${params.outdir}", pattern: "*tsv", mode: "copy"
+
+    input:
+    path(sample_list)
+    path(custom_qc_all)
+    //path(quast_report)
+    path(gblast_collected)
+    path(pblast_collected)
+    path(global_blast_collected)
+
+
+    output:
+    path("typing_report_top3.tsv") 
+
+
+    script:
+    fullblast = params.reference_db_full ? "--globalblast ${global_blast_collected}" : ''
+    """
+    master_report.py \
+    --sample-list ${sample_list} \
+    --gblast ${gblast_collected} \
+    --pblast ${pblast_collected} \
+    $fullblast \
+    --qc ${custom_qc_all} \
+    --output typing_report_top3.tsv \
+
+    """
+
+
 }

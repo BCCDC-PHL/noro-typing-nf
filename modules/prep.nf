@@ -1,3 +1,23 @@
+process hash_files {
+
+    tag { sample_id }
+
+    input:
+    tuple  val(sample_id), path(files_to_hash), val(file_type)
+
+    output:
+    tuple  val(sample_id), path("${sample_id}_${file_type}.sha256.csv"), emit: csv
+    tuple  val(sample_id), path("${sample_id}_${file_type}_provenance.yml"), emit: provenance
+
+    script:
+    """
+    shasum -a 256 ${files_to_hash} | tr -s ' ' ',' > ${sample_id}_${file_type}.sha256.csv
+    while IFS=',' read -r hash filename; do
+        printf -- "- input_filename: \$filename\\n  input_path: \$(realpath \$filename)\\n  sha256: \$hash\\n" >> ${sample_id}_${file_type}_provenance.yml
+    done < ${sample_id}_${file_type}.sha256.csv
+    """
+}
+
 process make_union_database {
     storeDir "${projectDir}/cache/blast_db/union_db"
 
@@ -20,8 +40,9 @@ process fastp {
 
     tag { sample_id }
 
-    publishDir "${params.outdir}/preprocess/fastp", pattern: "${sample_id}*_R{1,2}.trim.fastq.gz" , mode:'copy'
+    publishDir "${params.outdir}/preprocess/fastp", pattern: "${sample_id}*_R{1,2}.trim.fastq.gz" 
     publishDir "${params.outdir}/preprocess/fastp/html", pattern: "${sample_id}*html" , mode:'copy'
+    publishDir "${params.outdir}/preprocess/fastp/csv", pattern: "${sample_id}*csv", mode: "copy"
 
     input:
     tuple val(sample_id), path(fastq1), path(fastq2)
@@ -31,6 +52,7 @@ process fastp {
     tuple val(sample_id), path("${sample_id}.fastp.json"), emit: json
     tuple val(sample_id), path("${sample_id}.fastp.html"), emit: html
     tuple val(sample_id), path("${sample_id}_fastp_provenance.yml"), emit: provenance
+    tuple val(sample_id), path("${sample_id}_fastp.csv"), emit: csv
 
     script:
     """
@@ -44,23 +66,9 @@ process fastp {
       -O ${sample_id}_R2.trim.fastq.gz \
       -j ${sample_id}.fastp.json \
       -h ${sample_id}.fastp.html \
-      --detect_adapter_for_pe
-    """
-}
-
-process fastp_json_to_csv {
-    tag { sample_id }
-
-    publishDir path: "${params.outdir}/preprocess/fastp/csv", pattern: "${sample_id}*csv", mode: "copy"
-
-    input: 
-    tuple val(sample_id), path(fastp_json)
-
-    output:
-    tuple val(sample_id), path("${sample_id}_fastp.csv")
-
-    """
-    fastp_json_to_csv.py ${fastp_json} > ${sample_id}_fastp.csv
+      # --umi_loc=per_read --umi_len=8 \
+      --detect_adapter_for_pe && 
+    fastp_json_to_csv.py ${sample_id}.fastp.json > ${sample_id}_fastp.csv
     """
 }
 
@@ -68,7 +76,7 @@ process cutadapt {
 
     tag { sample_id }
 
-    publishDir "${params.outdir}/preprocess/cutadapt", pattern: "${sample_id}_R{1,2}.trimmed.fastq.gz", mode:'copy'
+    publishDir "${params.outdir}/preprocess/cutadapt", pattern: "${sample_id}_R{1,2}.trimmed.fastq.gz"
     publishDir "${params.outdir}/preprocess/cutadapt/logs", pattern: "*cutadapt.log", mode:'copy'
 
     input:
@@ -103,51 +111,36 @@ process run_kraken {
 
     conda "${projectDir}/environments/kraken.yaml"
 
-    publishDir path: "${params.outdir}/filtering/kraken/reports", pattern: "${sample_id}.kraken.report", mode: "copy"
-    publishDir path: "${params.outdir}/filtering/kraken/output", pattern: "${sample_id}.kraken.out", mode: "copy"
-
+    publishDir path: "${params.outdir}/preprocess/kraken/reports", pattern: "${sample_id}.kraken.report", mode: "copy"
+    publishDir path: "${params.outdir}/preprocess/kraken/output", pattern: "${sample_id}.kraken.out", mode: "copy"
+    publishDir path: "${params.outdir}/preprocess/kraken/filtered", pattern: "${sample_id}*kfilter.fastq.gz"
 
     input: 
     tuple val(sample_id), path(reads_1), path(reads_2)
 
     output:
-    tuple val(sample_id), path("${sample_id}.kraken.report"), path("${sample_id}.kraken.out")
+    tuple val(sample_id), path("${sample_id}.kraken.report"), path("${sample_id}.kraken.out"), emit: main
+    tuple val(sample_id), path("${sample_id}_R1.kfilter.fastq.gz"), path("${sample_id}_R2.kfilter.fastq.gz"), emit: fastq
+    path("${sample_id}.kraken.report"), emit: report
 
     """
+    printf -- "- process_name: kraken2\\n" > ${sample_id}_kraken2_provenance.yml
+    printf -- "  tool_name: kraken2\\n  tool_version: \$(kraken2 --version | head -n1 | cut -d' ' -f3)\\n" >> ${sample_id}_kraken2_provenance.yml
+
     kraken2 --confidence 0.1 \
     --threads ${task.cpus} --db ${params.kraken_db} \
     --paired ${reads_1} ${reads_2} \
-    --report ${sample_id}.kraken.report > ${sample_id}.kraken.out 
-    """
-}
+    --report ${sample_id}.kraken.report > ${sample_id}.kraken.out &&
 
-process kraken_filter {
-
-    tag {sample_id}
-
-    conda "${projectDir}/environments/kraken.yaml"
-
-    publishDir path: "${params.outdir}/filtering/kraken/filtered", pattern: "${sample_id}*fastq.gz", mode: "copy"
-
-    input:
-    tuple val(sample_id), path(reads_1), path(reads_2), path(kraken_report), path(kraken_out)
-
-    output:
-    tuple val(sample_id), path("${sample_id}_R1.kfilter.fastq.gz"), path("${sample_id}_R2.kfilter.fastq.gz"), emit: filtered
-
-    script:
-    """
     # Extract the norovirus specific reads 
-    # will exclude anything not under Norovirus clade; including human reads 
-    extract_kraken_reads.py \
+    extract_kraken_reads.py  --fastq-output \
     -k ${sample_id}.kraken.out -r ${sample_id}.kraken.report \
     -1 ${reads_1} -2 ${reads_2} \
     -o ${sample_id}_R1.kfilter.fastq -o2 ${sample_id}_R2.kfilter.fastq \
-    -t ${params.krk_norovirus_id} --include-children &&
+    -t ${params.krk_norovirus_id} 0 --include-children &&
     gzip -c ${sample_id}_R1.kfilter.fastq > ${sample_id}_R1.kfilter.fastq.gz &&
     gzip -c ${sample_id}_R2.kfilter.fastq > ${sample_id}_R2.kfilter.fastq.gz
     """
-
 }
 
 process run_centrifuge {
@@ -184,34 +177,18 @@ process build_composite_reference {
     tuple path(human_ref), path(virus_ref)
 
     output:
-    path("${composite_ref}"), emit: fasta
+    tuple path("${composite_ref}"), path("${composite_ref}.*")
     // path("${composite_ref}.*"), emit: index
     // path("reference_headers.txt"), emit: headers
 
     script:
     composite_ref = params.composite_ref_name 
     """ 
-    cat ${human_ref} ${virus_ref} > ${composite_ref} 
-    """
-}
-
-process index_composite_reference {
-    storeDir "${projectDir}/cache/composite"
-
-    // label 'ultra'
-
-    input:
-    path(composite_ref)
-
-    output:
-    // val("${composite_ref.simpleName}"), emit: name
-    // tuple path("${composite_ref}.bwt"), path("${composite_ref}.amb"), path("${composite_ref}.ann"), path("${composite_ref}.pac"), path("${composite_ref}.sa"), emit: files
-    tuple path("${composite_ref}"), path("${composite_ref}.*")
-
-    script:
-    ref_name = composite_ref.simpleName
-    """
-    bwa index -a bwtsw -b 10000000 ${composite_ref}
+    echo "Building composite reference..." && 
+    cat ${human_ref} ${virus_ref} > ${composite_ref} &&
+    echo "Indexing composite reference..." && 
+    bwa index -a bwtsw -b 10000000 ${composite_ref} &&
+    echo "Complete." 
     """
 }
 
@@ -221,9 +198,9 @@ process dehost_fastq {
 
     tag {sample_id}
 
-    publishDir path: "${params.outdir}/dehosted/", pattern: "${sample_id}*fastq.gz", mode: "copy"
-    publishDir path: "${params.outdir}/dehosted/bam", pattern: "${sample_id}*bam", mode: "copy"
-    publishDir path: "${params.outdir}/dehosted/metrics", pattern: "${sample_id}*_metrics.txt", mode: "copy"
+    publishDir path: "${params.outdir}/preprocess/dehosted/", pattern: "${sample_id}*fastq.gz"
+    publishDir path: "${params.outdir}/preprocess/dehosted/bam", pattern: "${sample_id}*bam"
+    publishDir path: "${params.outdir}/preprocess/dehosted/metrics", pattern: "${sample_id}*_metrics.txt", mode: "copy"
 
     input:
     tuple val(sample_id), path(reads_1), path(reads_2)

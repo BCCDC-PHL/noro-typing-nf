@@ -3,6 +3,7 @@
 from Bio import SeqIO
 import csv
 import subprocess
+import argparse
 import pandas as pd
 import matplotlib.pyplot as plt
 import shlex
@@ -39,7 +40,7 @@ def make_qc_plot(depth_pos, n_density, samplename, window=200):
     plt.savefig(samplename + '.depth.png')
 
 def read_depth_file(bamfile):
-    p = subprocess.Popen(['samtools', 'depth', '-a', '-d', '0', bamfile],
+    p = subprocess.Popen(['samtools', 'depth', '-a', bamfile],
                        stdout=subprocess.PIPE)
     out, err = p.communicate()
     counter = 0
@@ -93,7 +94,7 @@ def get_depth_quantiles(pos_depth):
 
     quantiles = [
         np.min(depths),
-        *np.quantile(depths, [0.025, 0.1, 0.25, 0.50, 0.975]).tolist(),
+        *np.quantile(depths, [0.1, 0.25, 0.50]).tolist(),
         np.max(depths),
         np.mean(depths)
     ]
@@ -121,14 +122,12 @@ def get_num_reads(bamfile):
 
     return subprocess.check_output(what).decode().strip()
     
-def go(args):
-    depth = 10
-
-    ## Depth calcs
+def run_qc(args):
+    ## Depth calc
     ref_length = get_ref_length(args.ref)
     depth_pos = read_depth_file(args.bam)
 
-    depth_covered_bases = get_covered_pos(depth_pos, depth)
+    depth_covered_bases = get_covered_pos(depth_pos, args.min_depth)
 
     pct_covered_bases = depth_covered_bases / ref_length * 100
 
@@ -148,50 +147,43 @@ def go(args):
         largest_N_gap = get_largest_N_gap(fasta)
 
     	# QC PASS / FAIL
-        if largest_N_gap >= 10000 or pct_N_bases < 50.0:
-                qc_pass = "TRUE"
+        if pct_N_bases < 50.0 and pct_covered_bases > 0.80:
+            qc_pass = "TRUE"
 
     quantiles = get_depth_quantiles(depth_pos)
 
     qc_line = { 'sample_name' : args.sample_name,
                 'depth_min'    : "{:.2f}".format(quantiles[0]),
-                'depth_025'    : "{:.2f}".format(quantiles[1]),
-                'depth_10'    : "{:.2f}".format(quantiles[2]),
-                'depth_25'    : "{:.2f}".format(quantiles[3]),
-                'depth_50'    : "{:.2f}".format(quantiles[4]),
-                'depth_975'    : "{:.2f}".format(quantiles[5]),
-                'depth_max'    : "{:.2f}".format(quantiles[6]),
-                'depth_mean'   : "{:.2f}".format(quantiles[7]),
+                'depth_10'    : "{:.2f}".format(quantiles[1]),
+                'depth_25'    : "{:.2f}".format(quantiles[2]),
+                'depth_50'    : "{:.2f}".format(quantiles[3]),
+                'depth_max'    : "{:.2f}".format(quantiles[4]),
+                'depth_mean'   : "{:.2f}".format(quantiles[5]),
                 'pct_N_bases' : "{:.2f}".format(pct_N_bases),
-          'pct_covered_bases' : "{:.2f}".format(pct_covered_bases), 
-           'longest_no_N_run' : largest_N_gap,
-          'num_aligned_reads' : num_reads,
-                    #    'fasta': args.consensus, 
-                    #     'bam' : args.bam,
-                    'qc_pass' : qc_pass}
+                f'pct_covered_{args.min_depth}' : "{:.2f}".format(pct_covered_bases), 
+                'longest_no_N_run' : largest_N_gap,
+                'num_aligned_reads' : num_reads,
+                #    'fasta': args.consensus, 
+                #     'bam' : args.bam,
+                'qc_pass' : qc_pass}
 
-
-    with open(args.outfile, 'w') as csvfile:
-        header = qc_line.keys()
-        writer = csv.DictWriter(csvfile, fieldnames=header)
-        writer.writeheader()
-        writer.writerow(qc_line)
+    df = pd.DataFrame(qc_line, index=[0])
+    df.to_csv(args.outfile, index=False)
 
     N_density = sliding_window_N_density(fasta)
     make_qc_plot(depth_pos, N_density, args.sample_name)
 
 def main():
-    import argparse
-
     parser = argparse.ArgumentParser()
     parser.add_argument('-o', '--outfile', required=True)
     parser.add_argument('-s', '--sample_name', required=True)
     parser.add_argument('-r', '--ref', required=True)
     parser.add_argument('-b', '--bam', required=True)
     parser.add_argument('-c', '--consensus', required=True)
+    parser.add_argument('-d', '--min-depth', default=10, type=int)
 
     args = parser.parse_args()
-    go(args)
+    run_qc(args)
 
 if __name__ == "__main__":
     main()

@@ -19,12 +19,14 @@ import argparse
 import yaml
 from tools import make_align_dict, translate_nuc, flex_translate, get_boundaries
 import re
+from functools import partial
+import multiprocessing as mp
 
 def init_parser():
 	# create the top-level parser
 	parser = argparse.ArgumentParser(prog='PROG')
 	parser.add_argument('--debug', action='store_true')
-	parser.add_argument('--accno_pos', default=0, help='Zero indexed position of accession number in FASTA header')
+	parser.add_argument('--header_pos_accno', default=0, help='Zero indexed position of accession number in FASTA header')
 	parser.add_argument('--header_delim', default='|', help='Delimiter character used in the reference FASTA header')
 
 	subparsers = parser.add_subparsers(help='sub-command help')
@@ -32,21 +34,28 @@ def init_parser():
 	parser_a = subparsers.add_parser('database', help='One reference, multiple input queries. Extract genes from a BLAST DB of query inputs')
 	parser_a.add_argument('-q', '--query', required=True, help='FASTA sequences to align to reference')
 	parser_a.add_argument('-r', '--ref', required=True, help='Single reference sequence FASTA file. For norovirus, this is the G1 reference.')
-	parser_a.add_argument('-p', '--positions', required=True, help='YAML file containing gene positions for extraction')
+	parser_a.add_argument('-p', '--positions', required=True, help='YAML file containing gene positions for extraction. Positions should be 1-indexed, as on GenBank, not 0-indexed.')
 	parser_a.add_argument('-g', '--gene', required=True, help='Gene to extract.')
-	parser_a.add_argument('-o', '--output', required=True, help='Output FASTA file containing genes')
-
+	parser_a.add_argument('-o', '--outfasta', help='Output FASTA file containing genes')
+	parser_a.add_argument('-O', '--outyaml', required=True, help='Output YAML file with saved positions of all genes')
+	parser_a.add_argument('-n', '--nthreads', default=1, type=int)
 	parser_a.set_defaults(func=main_database)
 
 	# create the parser for the "b" command
 	parser_b = subparsers.add_parser('sample', help='Single input query mode. Extract one gene from one sample.')
 	parser_b.add_argument('-q', '--query', required=True, help='Single FASTA sequence to align to chosen reference')
 	parser_b.add_argument('-r', '--ref', required=True, help='Multi FASTA file of reference sequences')
+	parser_b.add_argument('-p', '--positions', required=True, help='YAML file containing gene positions for extraction')
 	parser_b.add_argument('-g', '--gene', required=True, help='Gene to extract. For norovirus, either vp1 or rdrp.')
-	parser_b.add_argument('-o', '--output', required=True, help='Output FASTA file containing genes')
+	parser_b.add_argument('-o', '--outfasta', required=True, help='Output FASTA file containing genes')
 	parser_b.set_defaults(func=main_sample)
 
 	return parser 
+
+class HighNContentException(Exception):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
 
 def init_aligner():
 	aligner = Align.PairwiseAligner()
@@ -58,30 +67,33 @@ def init_aligner():
 	
 	return aligner
 
-def extract_gene_by_position(aligner, ref, query, gene_pos, debug):
+def extract_gene_by_position(query, aligner, ref, gene_pos, debug):
 
 	# Perform pairwise alignment and get aligned sequences 
 	align_iter = aligner.align(ref.seq, query.seq)
 	ref_aligned, qry_aligned = next(align_iter)
 
+	align_start, align_stop = get_boundaries(ref_aligned)
+
+	ref_aligned = ref_aligned[align_start: align_stop]
+	qry_aligned = qry_aligned[align_start: align_stop]
+
 	# Generate necessary alignment dictionaries to translate coordinates 
-	align_dict, _ = make_align_dict(ref_aligned, qry_aligned)
+	align_dict, query_dict = make_align_dict(ref_aligned, qry_aligned)
 
 	# STEP 1 - USE ALIGNMENT DICT TO TRANSLATE FROM REF POS TO ALIGNMENT POS
 	align_start = align_dict[gene_pos[0]-1]
 	align_end = align_dict[gene_pos[1]]  # JUSTIFIED BY SANITY CHECK 
 
 	print(query.id)
-	print(f"Reference Length: {len(ref)}")
-	print(f"Query Length: {len(query)}")
-	print(f"Start: {align_start}")
-	print(f"End: {align_end}")
 
 	# formulate the final gene extracted from the query 
 	outseq = qry_aligned[align_start: align_end].replace("-","")
-	print(f"Output Length: {len(outseq)} % 3 == {len(outseq) % 3}")
 
 	if debug:
+		print(f"Reference Length: {len(ref)}")
+		print(f"Query Length: {len(query)}")
+		print(f"Output Length: {len(outseq)} % 3 == {len(outseq) % 3}")
 		print("REFERENCE:")
 		print(ref_aligned)
 		print("QUERY:")
@@ -90,10 +102,17 @@ def extract_gene_by_position(aligner, ref, query, gene_pos, debug):
 		print(ref_aligned[align_start: align_end+1])
 		print("QUERY:")
 		print(qry_aligned[align_start: align_end+1])
+		print(f"Alignment Position Start: {align_start}")
+		print(f"Alignment Position End: {align_end}")
+		print(f"Query Position Start: {query_dict[align_start]}")
+		print(f"Query Position End: {query_dict[align_end]}")
+		print("TEST")
+		print(query.seq[query_dict[align_start]:query_dict[align_end]])
+		print(outseq)
 		print("REFERENCE:")
 		print(translate_nuc(ref_aligned[align_start: align_end+1],0))
 		print("QUERY:")
-		print(translate_nuc(qry_aligned[align_start: align_end+1],0))
+		print(translate_nuc(qry_aligned[align_start: align_end+1].replace("-",""),0))
 		print(f"Output Length: {len(outseq)} % 3 == {len(outseq) % 3}")
 
 	outrecord = SeqIO.SeqRecord(
@@ -103,50 +122,14 @@ def extract_gene_by_position(aligner, ref, query, gene_pos, debug):
 		description=query.description
 	)
 
-	return outrecord
+	return outrecord, (query_dict[align_start], query_dict[align_end])
 
-def extract_gene_by_gaps(aligner, ref, query, debug):
-	# Perform pairwise alignment and get aligned sequences 
-	align_iter = aligner.align(ref.seq, query.seq)
-	ref_aligned, qry_aligned = next(align_iter)
-
-	print(query.id)
-	align_start, align_end = get_boundaries(ref_aligned)
-
-	print(f"Reference Length: {len(ref)}")
-	print(f"Query Length: {len(query)}")
-	print(f"Start: {align_start}")
-	print(f"End: {align_end}")
-
-	# find the  
-	outseq = qry_aligned[align_start: align_end].replace("-","")
-	print(f"Output Length: {len(outseq)} % 3 == {len(outseq) % 3}")
-
-	if debug:
-		print("REFERENCE:")
-		print(ref_aligned)
-		print("QUERY:")
-		print(qry_aligned)
-		print("REFERENCE:")
-		print(ref_aligned[align_start: align_end])
-		print("QUERY:")
-		print(qry_aligned[align_start: align_end])
-		print("REFERENCE:")
-		print(translate_nuc(ref_aligned[align_start: align_end],0))
-		print("QUERY:")
-		print(translate_nuc(qry_aligned[align_start: align_end],0))
-
-	outrecord = SeqIO.SeqRecord(
-		Seq(outseq),
-		id=query.id,
-		name=query.name,
-		description=query.description
-	)
-
-	return outrecord
 def sanity_check(seq):
 
 	test_seq = copy(seq)
+
+	if test_seq.seq.count("N") / len(test_seq) > 0.3:
+		raise HighNContentException(f'ERROR: Query alignment has significant dropout in the target gene. Alignment failed. Exiting.\n{str(test_seq.seq)}')
 
 	# remove excess bases that do not fit 
 	if len(test_seq) % 3 != 0:
@@ -161,12 +144,12 @@ def sanity_check(seq):
 		print("REFERENCE: \n"+translate_nuc(str(seq.seq),0))
 		print("QUERY: \n "+translate_nuc(str(seq.seq),0))
 		
-		_, stop_codon_count, frame_start = flex_translate(str(seq.seq))
+		seq_fix, stop_codon_count, frame_start = flex_translate(str(seq.seq))
 
 		if stop_codon_count <= 1:
 			print("FIXED.")
+			print(seq_fix)
 			seq.seq = seq.seq[frame_start:]
-
 			return seq
 			
 		else:
@@ -193,32 +176,73 @@ def main_database(args):
 	# load the database (a collection of query sequences)
 	qry_seqs = list(SeqIO.parse(args.query, 'fasta'))
 
-	# extract the gene from all query sequences
-	gene_records = list(map(lambda x : extract_gene_by_position(aligner, ref_seq, x, position_dict[args.gene], args.debug), qry_seqs))
-	gene_records = [sanity_check(x) for x in gene_records]
-
-	# check for failed cases 
-	failed = sum((1 for x in gene_records if not isinstance(x, SeqRecord)))
-
-	# report failed cases 
-	if failed > 0:
-		print(f"WARNING: {failed} problematic sequences have been generated. \
-			Only writing good quality ones. Sequence output will be lower than input.")
-		
-		gene_records = [x for x in gene_records if isinstance(x, SeqRecord)]
-
-	# produce an output filename if none is given 
-	if not args.output:
-		output = re.split("_|\.", os.path.basename(args.query))[0] + '.genes.fasta'
+	# catch invalid gene inputs 
+	if args.gene not in ['vp1', 'rdrp', 'all']:
+		print("ERROR: Invalid gene selected.")
+		sys.exit(1)
+	
+	# catch invalid filepath case 
+	if args.gene == 'all' and (not re.search('\{[^\}]+\}', args.outfasta) or not re.search('\{[^\}]+\}', args.outyaml)):
+		print("ERROR: Must include {gene} string in both the output FASTA/YAML paths when using gene = 'all' ")
+		sys.exit(1)
+	
+	# parse gene inputs 
+	if args.gene != 'all':
+		genes = [args.gene]
 	else:
-		output = args.output
+		genes = ['vp1', 'rdrp']
 
-	SeqIO.write(gene_records, output, 'fasta')
+	# iterate over all genes needing to be processed 
+	for gene in genes:
+		# instantiate a partial function used for multiprocessing
+		mp_extract = partial(extract_gene_by_position, aligner=aligner, ref=ref_seq, gene_pos=position_dict[gene], debug=args.debug)
+
+		# extract the gene from all query sequences
+		with mp.Pool(args.nthreads) as pool:
+			results = pool.map(mp_extract, qry_seqs)
+		gene_seqs, gene_positions = zip(*results)
+		
+		# run a sanity check that fixes incorrect excisions
+		gene_seqs = [sanity_check(x) for x in gene_seqs]
+
+		# extract gene positions for later 
+		gene_positions = { seq.id.split(args.header_delim)[args.header_pos_accno] : list([pos[0]+1, pos[1]+1]) for seq, pos in zip(qry_seqs, gene_positions)}
+
+		# check for failed cases 
+		failed = sum((1 for x in gene_seqs if not isinstance(x, SeqRecord)))
+
+		# report failed cases 
+		if failed > 0:
+			print(f"WARNING: {failed} problematic sequences have been generated. \
+				Only writing good quality ones. Sequence output will be lower than input.")
+			
+			gene_seqs = [x for x in gene_seqs if isinstance(x, SeqRecord)]
+
+		# produce an output filename if none is given 
+		if not args.outfasta:
+			outpath = re.split("_|\.", os.path.basename(args.query))[0] + '_' + gene + '.fasta'
+		elif args.gene == 'all':
+			outpath = re.sub("\{[^\}]+\}", gene, args.outfasta)
+			outyaml = re.sub("\{[^\}]+\}", gene, args.outyaml)
+		else:
+			outpath = args.outfasta
+			outyaml = args.outyaml
+
+		# write out the gene positions to a YAML file 
+		with open(outyaml, 'w') as outfile:
+			yaml.dump(gene_positions, outfile)
+		
+		# write output FASTA file 
+		SeqIO.write(gene_seqs, outpath, 'fasta')
 
 def main_sample(args):
 	'''
 	Main function for mode #1 (single query). Function used to extract a gene from a single query sequence 
 	'''
+	# catch invalid gene inputs 
+	if args.gene not in ['vp1', 'rdrp', 'all']:
+		print("ERROR: Invalid gene selected.")
+		sys.exit(1)
 
 	print("Extracting gene from sample...")
 	aligner = init_aligner()
@@ -234,37 +258,58 @@ def main_sample(args):
 
 	# load in a collection of references (which are already cut down to gene of interest) (this is the BLAST DB FASTA)
 	ref_seq_dict = SeqIO.to_dict(SeqIO.parse(args.ref,'fasta'))
-	ref_seq_dict = {x.split(args.header_delim)[args.accno_pos]:y for x,y in ref_seq_dict.items()}
+	ref_seq_dict = {x.split(args.header_delim)[args.header_pos_accno]: y for x,y in ref_seq_dict.items()}
+
+	if qry_seq.id.count("|") != 4:
+		print("ERROR: Wrong sequence header input specified. Should contain 5 fields total: ID|TYPE|ACCNO|WORKFLOW|EXTRA")
+		sys.exit(1)
 
 	# parse out the reference accession number from the query FASTA file 
-	accnos = qry_seq.id.split("|")[2].split("_")
+	accno_field = qry_seq.id.split("|")[2]
 
-	if accnos[0] == 'NA' or accnos[1] == 'NA':
-		print("ERROR: Sequence failed in an earlier BLAST step. No reference accession found.")
-		sys.exit(1)
+	if qry_seq.id.split("|")[4] == 'composite':
 
-	# adaptive search for the correct reference sequence (avoids need for an extra parameter)
-	ref_seq = None
+		accnos = accno_field.split("_")
 
-	# this section can be expanded if more genes are desired
-	if args.gene == 'vp1':
-		ref_seq = ref_seq_dict[accnos[0]]
-	elif args.gene == 'rdrp':
-		ref_seq = ref_seq_dict[accnos[1]]
+		if (args.gene == 'vp1' and accnos[0] == 'NA') or (args.gene == 'rdrp' and accnos[1] == 'NA'):
+			print("ERROR: Sequence failed in an earlier BLAST step. No reference accession found.")
+			sys.exit(1)
+
+		# this section can be expanded if more genes are desired
+		if args.gene == 'vp1':
+			ref_accno = accnos[0]
+		elif args.gene == 'rdrp':
+			ref_accno = accnos[1]
+		else:
+			print("ERROR: Not a valid gene entry.")
+			sys.exit(1)
+
 	else:
-		print("ERROR: Not a valid gene entry.")
-		sys.exit(1)
+		ref_accno = accno_field
+
+	# retrieve the appropriate reference using the chosen accession number
+	ref_seq = ref_seq_dict[ref_accno]
+
+	# load the positions from the YAML file 
+	with open(args.positions,'r') as infile:
+		position_dict = yaml.safe_load(infile)
 
 	# extract the gene and perform sanity checks for the right reading frame 
-	gene_record = extract_gene_by_gaps(aligner, ref_seq, qry_seq, args.debug)
-	gene_record = sanity_check(gene_record)
+	gene_record, _ = extract_gene_by_position(qry_seq, aligner, ref_seq, position_dict[ref_accno], args.debug)
+
+	# catch failed cases where the N content is really high 
+	try:
+		gene_record = sanity_check(gene_record)
+	except HighNContentException as e:
+		print(e.message, file=sys.stderr)
+		sys.exit(1)
 
 	# check whether the gene is properly extracted 
 	if gene_record:
-		if not args.output:
+		if not args.outfasta:
 			output = re.split("_|\.", os.path.basename(args.query))[0]
 		else:
-			output = args.output
+			output = args.outfasta
 
 		SeqIO.write(gene_record, output, 'fasta')
 

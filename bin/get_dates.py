@@ -20,6 +20,9 @@ def init_parser():
 
 	return parser.parse_args()
 	
+def get_create_time(path):
+	t = os.stat(path).st_ctime
+	return dt.fromtimestamp(t)
 
 def parse_dates(accno_list):
 
@@ -109,14 +112,16 @@ def main():
 	header_list = pd.Series([x.id for x in seqs])
 
 	# split up the target sequences and the reference sequences
-	targets = header_list.str.contains("\|[pg]$")
-	
+	targets = header_list.str.contains("\|sample")
+	background = header_list.str.contains("\|background")
+
 	# create a dictionary of full_header : accession number
-	ref_headers = header_list.loc[~targets]
+	ref_headers = header_list.loc[(~targets)&(~background)]
 	ref_headers = {x : x.split(args.header_delim)[args.accno_pos] for x in ref_headers}
 
 	# extract target sequences
 	target_headers = header_list.loc[targets].tolist()
+	background_headers = header_list.loc[background].tolist()
 
 	# retrieve the collection dates 
 	dates_dict = parse_dates(list(ref_headers.values()))
@@ -126,10 +131,12 @@ def main():
 
 	# target dates are assumed to be current time for simplicity
 	target_dates = [(x, dt.today().strftime('%Y-%m-%d')) for x in target_headers]
+	background_dates = [(x, x.split("|")[-1]) if x.count("|") == 4 else dt.today().strftime('%Y-%m-%d') for x in background_headers]
 
 	# create two separate dataframes for references + target sequences 
 	ref_df = pd.DataFrame(ref_dates, columns=['accno','date'])
 	target_df = pd.DataFrame(target_dates, columns=['accno','date'])
+	background_df = pd.DataFrame(background_dates, columns=['accno','date'])
 
 	if args.debug:
 		print("PARSING ACCNOS:")
@@ -147,7 +154,7 @@ def main():
 		outpath = args.output
 
 	# output the final combined dataframe
-	final_df = pd.concat([ref_df, target_df]) 
+	final_df = pd.concat([ref_df, target_df, background_df]) 
 	final_df.to_csv(outpath, sep='\t', index=False, header=False)
 
 if __name__ == '__main__':

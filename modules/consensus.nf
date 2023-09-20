@@ -10,6 +10,10 @@ process mask_low_coverage {
     tuple val(sample_id), path("${sample_id}_low_coverage.bed")
     
     """
+    printf -- "- process_name: mask_low_coverage\\n" > ${sample_id}_bedtools_provenance.yml
+    printf -- "  tool_name: bedtools\\n  tool_version: \$(bedtools --version 2>&1 | cut -d' ' -f2)\\n" >> ${sample_id}_bedtools_provenance.yml
+
+
     bedtools genomecov -bga -ibam ${bamfile} |  awk '\$4 < ${params.consensus_min_depth} {{print}}' | awk 'BEGIN{FS=OFS="\\t"} {print \$1,\$2+1,\$3+1,\$4}' > "${sample_id}_low_coverage.bed"
     """
 }
@@ -28,10 +32,9 @@ process make_consensus {
 
     
     """
-    bcftools consensus -m ${mask_file} -f ${reference} ${common_vcf} > ${sample_id}.consensus.fasta &&
-    HEADER=`head -n 1 ${sample_id}.consensus.fasta | tr '${params.header_delim}>' '|'` &&
-    sed -i 1d ${sample_id}.consensus.fasta &&
-    sed -i 1i">${sample_id}\${HEADER}" ${sample_id}.consensus.fasta 
+    printf -- "- process_name: make_consensus\\n" > ${sample_id}_bcftools_provenance.yml
+    printf -- "  tool_name: bcftools\\n  tool_version: \$(bcftools --version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> ${sample_id}_bcftools_provenance.yml
+
+    bcftools consensus -m ${mask_file} -f ${reference} ${common_vcf} > ${sample_id}.consensus.fasta
     """
-    //# TYPE=`head -n 1 ${sample_id}.consensus.fasta | cut -d"${params.header_delim}" -f${params.header_pos_type},${params.header_pos_strain} --output-delimiter=\|` &&
 }

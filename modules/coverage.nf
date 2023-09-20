@@ -1,5 +1,6 @@
 process get_coverage { 
-	// errorStrategy 'ignore'
+	errorStrategy 'ignore'
+
 	tag { sample_id }
 
 	publishDir "${params.outdir}/qc/coverage/bed", mode:'copy'
@@ -8,19 +9,21 @@ process get_coverage {
 	tuple val(sample_id), path(bamfile), path(bam_index)
 
 	output:
-	tuple val(sample_id), path("*bed"),emit: coverage_file
+	tuple val(sample_id), path("*bed"), emit: main
 	tuple val(sample_id), path("${sample_id}_samtools_provenance.yml"), emit: provenance
+	tuple val(sample_id), env(COVERAGE), emit: metric
 
 	"""
 	printf -- "- process_name: samtools\\n" > ${sample_id}_samtools_provenance.yml
 	printf -- "  tool_name: samtools\\n tool_version: \$(samtools | sed -n '1 p'))\\n" >> ${sample_id}_samtools_provenance.yml
 
 	samtools depth -a ${bamfile} > ${sample_id}_coverage.bed
+	COVERAGE=`samtools depth -a ${bamfile} | awk '{if(\$3 > ${params.consensus_min_depth} ){total += 1}} END {print total*100/NR}'`
 	"""
 }
 
 process plot_coverage { 
-	// errorStrategy 'ignore'
+	errorStrategy 'ignore'
 
 	tag { sample_id }
 

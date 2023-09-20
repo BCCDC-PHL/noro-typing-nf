@@ -4,6 +4,7 @@ import pysam
 from collections import defaultdict
 import re
 import numpy as np
+from Bio import Align
 
 
 #%%
@@ -78,6 +79,17 @@ def read_pair_generator(sam, region_string=None):
             del read_dict[qname]
 
 
+complement_dict = {'A':'T', 'C':'G', 'G':'C', 'T':'A', 
+                    'W':'S', 'R':'Y', 'K':'M', 'Y':'R', 'S':'W', 'M':'K',
+                    'B':'V', 'D':'H', 'H':'D', 'V':'B',
+                    '*':'*', 'N':'N', '-':'-'}
+
+def reverse_and_complement(seq):
+    rseq = seq[::-1]
+    rcseq = ''
+    for i in rseq:  # reverse order
+        rcseq += complement_dict[i]
+    return rcseq
 
 codon_dict = {'TTT':'F', 'TTC':'F', 'TTA':'L', 'TTG':'L',
 'TCT':'S', 'TCC':'S', 'TCA':'S', 'TCG':'S',
@@ -103,7 +115,6 @@ mixture_dict = {'W':'AT', 'R':'AG', 'K':'GT', 'Y':'CT', 'S':'CG',
 'M':'AC', 'V':'AGC', 'H':'ATC', 'D':'ATG', 
 'B':'TGC', 'N':'ATGC', '-':'ATGC'}
 
-#mixture_dict_2 =  [ (set(v), k) for k, v in mixture_dict.iteritems() ]
 ambig_dict = dict(("".join(sorted(v)), k) for k, v in mixture_dict.items())
 
 
@@ -176,34 +187,40 @@ def translate_nuc(seq, offset, resolve=False, return_list=False):
 
 	return aa_seq
 
-def flex_translate(nt_seq):
+def flex_translate(nt_seq, debug=False):
 	
-	aa_seq = translate_nuc(nt_seq, 0)
+	min_frame = -1
+	min_count = np.Inf
+	best_seq = None
+
+	for i in range(3):
+		aa_seq = translate_nuc(nt_seq, i)
+		aa_count = aa_seq.count("*")
+		
+		if debug: 
+			print(aa_seq)
 	
-	if aa_seq.count("*") > 1:
-		min_frame = -1
-		min_count = np.Inf
-		best_seq = None
-
-		for i in range(3):
-			aa_seq = translate_nuc(nt_seq, i)
-			aa_count = aa_seq.count("*")
-			if aa_count < min_count:
-				min_count = aa_count
-				best_seq = aa_seq
-				min_frame = i
-	else:
-		best_seq = aa_seq
-		min_count = aa_seq.count("*")
-		min_frame = 0
-
+		if aa_count < min_count:
+			min_count = aa_count
+			best_seq = aa_seq
+			min_frame = i
+	
 	# flip 1 and 2
 	# this is to simplify the start position
-	# instead of padding the start and shifting downstream (how this function does it), we just start further downstream instead, hence pad1 = ORF2 and vice versa
+	# instead of padding the start and shifting upstream (how this function does it), we just start further downstream instead, hence pad1 = ORF2 and vice versa
 	if min_frame > 0:
 		min_frame = 1 if min_frame == 2 else 2
 
 	return best_seq, min_count, min_frame
+
+def init_aligner(mode='global', open_gap=-1.0, x_gap=-0.1):
+	aligner = Align.PairwiseAligner()
+	aligner.mode = mode
+	aligner.open_gap_score = open_gap
+	aligner.extend_gap_score = x_gap
+	aligner.target_end_gap_score = 0.0
+	aligner.query_end_gap_score = 0.0
+	return aligner
 
 
 def make_align_dict(ref, qry):
