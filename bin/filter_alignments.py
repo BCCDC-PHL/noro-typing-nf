@@ -21,6 +21,7 @@ def get_parser():
 	parser.add_argument('-O','--fasta_out', default=None, help='Filtered FASTA output')
 	parser.add_argument('--min_cov', default=25, type=int, help='Minimum coverage of database reference sequence by contig (percentage, default = 25)')
 	parser.add_argument('-i','--min_id', default=90, type=int, help='Minimum nucleotide sequence identity between database reference sequence and contig (percentage, default = 90)')
+	parser.add_argument('-n','--top_n_hits', default=1, type=int, help='Define how many top hits to include per sample. Default is 1.')
 	return parser
 
 def parse_blast(filepath, ref_scores, header_delim, header_pos_type):
@@ -62,7 +63,7 @@ def parse_blast(filepath, ref_scores, header_delim, header_pos_type):
 		return pd.DataFrame()
 
 #%%
-def filter_alignments(blast_results, score_column, min_cov, min_id):
+def filter_alignments(blast_results, score_column, min_cov, min_id, top_n_hits):
 	'''
 	Find best contig for each genome segment. Returns datasheet with best contigs.'''
 	print('Filtering alignments...')
@@ -94,8 +95,8 @@ def filter_alignments(blast_results, score_column, min_cov, min_id):
 		# filtered = filtered.loc[idxmax].drop_duplicates('sseqid')
 		filtered = filtered.sort_values('composite', ascending=False).reset_index(drop=True)
 
-		if filtered.shape[0] > 3:
-			filtered = filtered.iloc[0:3,:]
+		if filtered.shape[0] > top_n_hits:
+			filtered = filtered.iloc[0:top_n_hits,:]
 		# elif filtered.shape[0] < 3:
 		# 	rows_to_add = 3 - filtered.shape[0]
 		# 	na_df = pd.DataFrame([[None]*filtered.shape[1]] * rows_to_add, columns=filtered.columns)
@@ -163,7 +164,7 @@ def main():
 		# verbose_df = pd.DataFrame(columns=blast_df.columns)
 
 	else:
-		blast_df = filter_alignments(blast_df, args.metric, args.min_cov, args.min_id)
+		blast_df = filter_alignments(blast_df, args.metric, args.min_cov, args.min_id, args.top_n_hits)
 
 	if not args.tsv_out:
 		args.tsv_out = args.blastn.split(".tsv")[0] + '_filter.tsv'
