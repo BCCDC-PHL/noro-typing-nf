@@ -12,7 +12,7 @@ if (length(args) != 2 && length(args) != 3){
 }
 
 if (length(args) == 2){
-  delim = '|'
+  delim = '\\|'
 }else{
   delim = args[3]
 }
@@ -27,20 +27,22 @@ delim = '|'
 tree = read.tree(args[1])
 # tree = read.tree('~/work/norovirus/results-jan-31-9/phylo/capsid/tree/jan-31-9-gtype.nwk')
 
-target_mask = str_count(tree$tip.label, '\\|') == 3
-print(target_mask)
-target_labels = tree$tip.label[target_mask]
-background_labels = tree$tip.label[!target_mask]
-print(target_labels)
-print(background_labels)
+reference_mask = str_count(tree$tip.label, delim) == 2
+sample_mask = (str_count(tree$tip.label, delim) == 4) & (sapply(tree$tip.label, function(x) str_split(x, delim)[[1]][4] == 'sample'))
+background_mask = (str_count(tree$tip.label, delim) == 4) & (sapply(tree$tip.label, function(x) str_split(x, delim)[[1]][4] == 'background'))
 
-branches <- list(Target=target_labels, Background=background_labels)
+
+reference_labels = tree$tip.label[reference_mask]
+sample_labels = tree$tip.label[sample_mask]
+background_labels = tree$tip.label[background_mask]
+
+branches <- list(Samples=sample_labels, Background=background_labels, References=reference_labels)
 tree <- groupOTU(tree,branches)
 
 print("ggtree")
 p <- ggtree(tree, aes(color=group)) +
   geom_tiplab(align=T, linesize=0.5) + xlim(NA,2.5) +   
-  scale_color_manual(name="Sequence Type", values=c(Background = "darkblue",Target= "red")) + 
+  scale_color_manual(name="Sequence Type", values=c(Background = "darkblue", Samples= "red", References="darkgray")) + 
   guides(color = guide_legend(override.aes = list(size = 5))) 
 
 print("ggsave")
@@ -48,7 +50,4 @@ print("ggsave")
 # plot(p)
 ggsave(args[2], device="pdf")
 # dev.off()
-
-
-#tree$tip.label = sapply(tree$tip.label, function(x){ if (grepl("\\|", x)){ paste(strsplit(x, '\\|')[[1]][2:3], collapse="_")} else {x}})
 
