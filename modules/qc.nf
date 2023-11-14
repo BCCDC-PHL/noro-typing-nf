@@ -172,7 +172,7 @@ process make_typing_report {
     script:
     fullblast = params.reference_db_full ? "--globalblast ${global_blast_collected}" : ''
     """
-    master_report.py \
+    typing_report.py \
     --sample-list ${sample_list} \
     --gblast ${gblast_collected} \
     --pblast ${pblast_collected} \
