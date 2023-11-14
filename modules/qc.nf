@@ -166,7 +166,8 @@ process make_typing_report {
 
 
     output:
-    path("typing_report_top3.tsv") 
+    path("typing_report.tsv")       , emit: main
+    path("typing_report_top3.tsv")  , emit: top3
 
 
     script:
@@ -178,7 +179,7 @@ process make_typing_report {
     --pblast ${pblast_collected} \
     $fullblast \
     --qc ${custom_qc_all} \
-    --output typing_report_top3.tsv \
+    --output typing_report.tsv \
 
     """
 
