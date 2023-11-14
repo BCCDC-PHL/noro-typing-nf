@@ -83,27 +83,14 @@ def filter_alignments(blast_results, score_column, min_cov, min_id, top_n_hits):
 
 		blast_results = pd.concat([blast_results, scoring[['composite']]], axis=1)
 
-		# best_scores = blast_results[['qseqid', score_column]].groupby('qseqid')[score_column].nlargest(5).reset_index()[['qseqid',score_column]]
-		# blast_results = blast_results.nlargest(5, score_column)
-
 		# group by contig and take only the best result
 		idxmax = blast_results.groupby(['qseqid'])['composite'].idxmax()
 		filtered = blast_results.loc[idxmax]
 
-		# group by genotype / ptype and take only the best result (to avoid redundant entries)
-		# idxmax = filtered.groupby(['type'])['composite'].idxmax()
-		# filtered = filtered.loc[idxmax].drop_duplicates('sseqid')
 		filtered = filtered.sort_values('composite', ascending=False).reset_index(drop=True)
 
 		if filtered.shape[0] > top_n_hits:
 			filtered = filtered.iloc[0:top_n_hits,:]
-		# elif filtered.shape[0] < 3:
-		# 	rows_to_add = 3 - filtered.shape[0]
-		# 	na_df = pd.DataFrame([[None]*filtered.shape[1]] * rows_to_add, columns=filtered.columns)
-		# 	filtered = pd.concat([filtered, na_df])
-
-		# blast_results = pd.merge(blast_results, best_scores, on=['qseqid', score_column])
-		# blast_results = blast_results.sort_values(['qseqid', score_column],axis=0)
 		
 	except Exception as e:
 		print(str(e))
