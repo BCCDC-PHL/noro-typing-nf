@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np 
 import argparse
 import itertools
+import re
 
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 30)
@@ -107,9 +108,6 @@ def merge_blast(dfs):
 		blast_df = dfs[n]
 		sample_list = sample_list.union(set(blast_df['sample_name']))
 
-		# Remove redundant contig columns 
-		blast_df = blast_df.drop(blast_df.columns[blast_df.columns.str.contains('contig')], axis=1)
-
 		# For the first iteration, copy the dataframe
 		if n == 0:
 		   merged = blast_df.copy()
@@ -181,24 +179,37 @@ def build_blast_df(gblast_path, pblast_path, global_blast_path):
 
 	gtype_df = parse_blast(gblast_path,'g')
 	ptype_df = parse_blast(pblast_path,'p')
-	global_df = parse_blast(global_blast_path,'global')
 
 	# merge the individual typing calls into one 
-	synth_df = merge_blast([gtype_df, ptype_df])
+	synth_df = merge_blast([gtype_df, ptype_df])	
 
-	# sort and collapse dataframes to show the top 3 results
-	global_df = sort_collapse_df(global_df, 'global_type', 'global_composite')
+	if global_blast_path:
+		global_df = parse_blast(global_blast_path,'global')
+		# sort and collapse dataframes to show the top 3 results
+		global_df = sort_collapse_df(global_df, 'global_type', 'global_composite')
 
-	full_blast = global_df.merge(synth_df, on='sample_name', how='left')
-	full_blast.columns = full_blast.columns.map(lambda x : x.lstrip('global_') if 'contig' in x else x)
-	full_blast = full_blast.rename({'qseqid':'synth_qseqid'})
+		full_blast = global_df.merge(synth_df, on='sample_name', how='left')
+		full_blast.insert(1, 'global_type', full_blast.pop('global_type'))
+
+	else:
+		full_blast = synth_df
+
+
+	contig_cols = {}
+	for col in full_blast.columns:
+		if "contig" in col:
+			search = re.search("^[^_]+_(.+)", col)
+			simple_name = search.group(1) if search else None
+			if simple_name and simple_name not in contig_cols:
+				contig_cols[simple_name] = col
+	contig_cols = {y:x for x, y in contig_cols.items()}
+
+	full_blast = full_blast.rename(contig_cols, axis=1)
+	full_blast = full_blast.drop(full_blast.columns[full_blast.columns.str.contains("_contig_")], axis=1)
 	full_blast = full_blast.fillna('NA')
 
-
 	full_blast = full_blast.drop(full_blast.columns[full_blast.columns.str.endswith(('ref', 'qseqid'))], axis=1)
-
 	full_blast.insert(1, 'synth_type', full_blast.pop('synth_type'))
-	full_blast.insert(2, 'global_type', full_blast.pop('global_type'))
 
 	top_blast = full_blast.copy()
 	top_blast = top_blast.apply(lambda x : x.str.split("|").str[0] if x.dtype == 'object' else x)
