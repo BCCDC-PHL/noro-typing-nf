@@ -49,6 +49,7 @@ def parse_quast(path):
 	# quast_df['Assembly'] = quast_df['Assembly'].str.split(".").str[0]
 
 	return quast_df
+
 #%%
 def parse_blast(path, scheme):
 	# Define column headers
@@ -81,6 +82,20 @@ def parse_blast(path, scheme):
 	blast_df.columns = blast_df.columns.map(lambda x: x if x == 'sample_name' else scheme + "_" + x)
 
 	return blast_df
+
+def sort_collapse_df(df, sort_cols, score_col):
+	if not isinstance(sort_cols, list):
+		sort_cols = [sort_cols]
+	
+	idxmax = df.groupby(['sample_name',*sort_cols])[score_col].idxmax()
+	df = df.loc[idxmax]
+
+	# Sort by the appropriate metric
+	df = df.sort_values(['sample_name',score_col],ascending=[True, False])
+
+	# Collapse all rows into one per sample 
+	df = df.groupby('sample_name').agg(lambda x: '|'.join(map(str, x))).reset_index()
+	return df
 
 def merge_blast(dfs):
 
@@ -134,26 +149,14 @@ def merge_blast(dfs):
 	full_calls = full_calls.rename({'g_qseqid':'qseqid'},axis=1).drop('p_qseqid',axis=1)
 	full_calls['synth_score'] = full_calls['g_composite'] + full_calls['p_composite']
 	full_calls['synth_score'] = full_calls['synth_score'].round(2)
-	#full_calls.columns = full_calls.columns.map(lambda x : x.lstrip('p_') if )
 
-	# Combine typing calls into a single 'synth_type' column
+	full_calls = sort_collapse_df(full_calls, ['g_type','p_type'], 'synth_score')
+
 	full_calls['synth_type'] = full_calls[['g_type','p_type']].apply(lambda x : "|".join([a+'_'+b for a, b in itertools.zip_longest(x['g_type'].split("|"), x['p_type'].split("|"),fillvalue="NA")]), axis=1)
 	full_calls = full_calls.drop(['g_type','p_type'], axis=1)
 
 	return full_calls
 
-def sort_collapse_df(df, type_col, score_col):
-
-	# Remove redundancy -- exclude lower quality duplicate typing calls 
-	idxmax = df.groupby(['sample_name',type_col])[score_col].idxmax()
-	df = df.loc[idxmax]
-
-	# Sort by the appropriate metric
-	df = df.sort_values(['sample_name',score_col],ascending=[True, False])
-
-	# Collapse all rows into one per sample 
-	df = df.groupby('sample_name').agg(lambda x: '|'.join(map(str, x))).reset_index()
-	return df
 
 #%%
 def max_value(string, delim='|'):
@@ -174,27 +177,6 @@ def max_value(string, delim='|'):
 	return string
 
 #%%
-def pass_fail(df, warn_cover=80, fail_cover=50):
-
-	def check(pident, prop_covered):
-		if all([np.isnan(pident), np.isnan(prop_covered)]):
-			return 'FAIL'
-		if any([pident < 80, prop_covered < 80]):
-			return 'WARN'
-		else:
-			return "PASS"
-	
-
-	for prefix in ['global_','p_','g_']:
-		subset = df[df.columns[df.columns.str.startswith(prefix)]].copy()
-		subset = subset.drop(subset.columns[subset.columns.str.endswith(('type','qseqid'))],axis=1)
-		subset = subset.apply(max_value)
-
-		newcol = subset.apply(lambda x : check(x[prefix+"pident"], x[prefix+"prop_covered"]), axis=1)
-		df.insert(3, prefix+"status", newcol)
-
-
-#%%
 def build_blast_df(gblast_path, pblast_path, global_blast_path):
 
 	gtype_df = parse_blast(gblast_path,'g')
@@ -206,7 +188,6 @@ def build_blast_df(gblast_path, pblast_path, global_blast_path):
 
 	# sort and collapse dataframes to show the top 3 results
 	global_df = sort_collapse_df(global_df, 'global_type', 'global_composite')
-	synth_df = sort_collapse_df(synth_df, 'synth_type', 'synth_score')
 
 	full_blast = global_df.merge(synth_df, on='sample_name', how='left')
 	full_blast.columns = full_blast.columns.map(lambda x : x.lstrip('global_') if 'contig' in x else x)
@@ -218,8 +199,6 @@ def build_blast_df(gblast_path, pblast_path, global_blast_path):
 
 	full_blast.insert(1, 'synth_type', full_blast.pop('synth_type'))
 	full_blast.insert(2, 'global_type', full_blast.pop('global_type'))
-
-	pass_fail(full_blast)
 
 	top_blast = full_blast.copy()
 	top_blast = top_blast.apply(lambda x : x.str.split("|").str[0] if x.dtype == 'object' else x)
