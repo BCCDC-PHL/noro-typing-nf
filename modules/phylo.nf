@@ -13,7 +13,7 @@ process make_multifasta {
     
 	"""
 	cat ${sequences} > temp.fasta
-    filter_fasta.py main temp.fasta ${params.run_name}_${workflow}_multi.fasta
+    filter_fasta.py temp.fasta ${params.run_name}_${workflow}_multi.fasta
     rm temp.fasta
 	"""
 
