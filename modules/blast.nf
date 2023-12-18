@@ -20,7 +20,7 @@ process prep_database {
     workflow = task.ext.workflow ?: 'full'
     custom_dir = task.ext.custom_dir ?: 'global'
     """
-    filter_fasta.py main \
+    filter_fasta.py \
     --header_delim ${params.header_delim} \
     --header_pos_accno ${params.header_pos_accno} \
     --header_pos_type ${params.header_pos_type} \
