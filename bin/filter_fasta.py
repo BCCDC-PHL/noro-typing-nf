@@ -71,7 +71,7 @@ def main(args):
 		for seq in removed:
 			print(seq.id)
 	
-	SeqIO.write(seqs, args.outpath, 'fasta')
+	SeqIO.write(seqs, args.output, 'fasta')
 
 if __name__ == '__main__':
 	parser = init_parser()
