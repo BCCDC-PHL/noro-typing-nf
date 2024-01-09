@@ -179,7 +179,7 @@ process make_typing_report {
     --pblast ${pblast_collected} \
     $fullblast \
     --qc ${custom_qc_all} \
-    --output typing_report.tsv \
+    --outpath typing_report.tsv \
 
     """
 

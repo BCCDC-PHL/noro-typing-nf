@@ -54,49 +54,37 @@ def parse_quast(path):
 #%%
 def parse_blast(path, scheme):
 	# Define column headers
-	cols = 'sample_name qseqid sseqid slen pident length prop_covered cov type bitscore composite'.split()
+	cols = 'sample_name qseqid sseqid slen pident length prop_covered type bitscore composite'.split()
 	# Read in the BLAST results file and select the mentioned cols
 	blast_df = pd.read_csv(path, sep='\t')[cols]
 
-	# Checking to parse columns to appropriate datatypes
-	int_cols = ['slen', 'length']
-	blast_df[int_cols] = blast_df[int_cols].astype(int)
-	float_cols = ['cov', 'prop_covered', 'composite']
-	blast_df[float_cols] = blast_df[float_cols].astype(float).round(2)
-
 	# Sorting the dataframe
 	blast_df = blast_df.sort_values(['sample_name','composite'], ascending=False)
-	blast_df['sseqid'] = blast_df['sseqid'].str.split("|").str[0]
 
 	# Extracting contig length & depth information from 'qseqid'
-	blast_df['contig_len'] = blast_df['qseqid'].str.split("_").str[3].astype(int)
+	blast_df['contig_len'] = blast_df['qseqid'].str.split("_").str[3]
 	blast_df['contig_depth'] = blast_df['qseqid'].str.split("_").str[-1]
 
+	# Checking to parse columns to appropriate datatypes
+	int_cols = ['contig_len', 'slen', 'length']
+	blast_df[int_cols] = blast_df[int_cols].astype(int)
+	float_cols = ['contig_depth', 'prop_covered', 'composite']
+	blast_df[float_cols] = blast_df[float_cols].astype(float).round(2)
+
+	# Clean sequence IDs
+	blast_df['sseqid'] = blast_df['sseqid'].str.split("|").str[0]
 	blast_df['qseqid'] = blast_df['qseqid'].str.split("_length_").str[0]
 
 	# Renaming specific columns for clarity
-	blast_df = blast_df.rename({'length': 'hsp_len', 'cov': 'contig_depth','sseqid':'ref', },axis=1)
+	blast_df = blast_df.rename({'length': 'hsp_length','sseqid':'reference', },axis=1)
 
 	# Final sorting on specified columns before return
-	blast_df = blast_df.sort_values(['sample_name','qseqid','composite'])
+	blast_df = blast_df.sort_values(['sample_name','qseqid','composite']).reset_index(drop=True)
 
 	blast_df.columns = blast_df.columns.map(lambda x: x if x == 'sample_name' else scheme + "_" + x)
 
 	return blast_df
 
-def sort_collapse_df(df, sort_cols, score_col):
-	if not isinstance(sort_cols, list):
-		sort_cols = [sort_cols]
-	
-	idxmax = df.groupby(['sample_name',*sort_cols])[score_col].idxmax()
-	df = df.loc[idxmax]
-
-	# Sort by the appropriate metric
-	df = df.sort_values(['sample_name',score_col],ascending=[True, False])
-
-	# Collapse all rows into one per sample 
-	df = df.groupby('sample_name').agg(lambda x: '|'.join(map(str, x))).reset_index()
-	return df
 
 def merge_blast(dfs):
 
@@ -110,50 +98,82 @@ def merge_blast(dfs):
 
 		# For the first iteration, copy the dataframe
 		if n == 0:
-		   merged = blast_df.copy()
+			merged = blast_df.copy()
 		else:
-		   # For the second iteration, merge the dataframes
-		   merged = merged.merge(blast_df, left_on=['sample_name','g_qseqid'], right_on=['sample_name','p_qseqid'], how='outer')
+			# For the second iteration, merge the dataframes
+			merged = merged.merge(blast_df, left_on=['sample_name','g_qseqid'], right_on=['sample_name','p_qseqid'], how='outer')
 
+	# Renaming and cleaning up
+	merged = merged.sort_values(['sample_name','g_qseqid'])
+	
+	merged = merged.reset_index(drop=True)
+
+	return merged
+
+def handle_partials(df, score_col):
 	# Extract the rows that have both 'g_type' and 'p_type' calls
-	full_calls = merged.loc[(~merged['g_type'].isna())&(~merged['p_type'].isna())].copy()
+	complete = df.loc[(~df['g_type'].isna()) & (~df['p_type'].isna())].copy()
+	complete.insert(1, 'status', ['COMPLETE'] * complete.shape[0])
+	
 
 	# Select rows with only one type of call
-	partial_gtype = merged.loc[(merged['p_type'].isna())].copy()
-	partial_ptype = merged.loc[(merged['g_type'].isna())].copy()
+	partial_gtype = df.loc[(df['p_type'].isna())].copy()
+	partial_ptype = df.loc[(df['g_type'].isna())].copy()
 
-	# Calculate difference between overall sample list and the ones in 'full calls'
-	sample_list = pd.Series(list(sample_list))
-	missing_samples = sample_list[~sample_list.isin(full_calls['sample_name'])]
+	# Find and keep only the record with max composite score per sample for both type calls
+	idxmax1 = partial_gtype.groupby('sample_name')['g_'+score_col].idxmax()
+	partial_gtype = partial_gtype.loc[idxmax1].dropna(axis=1)
+	idxmax2 = partial_ptype.groupby('sample_name')['p_'+score_col].idxmax()
+	partial_ptype = partial_ptype.loc[idxmax2].dropna(axis=1)
 
-	if len(missing_samples) > 0:
+	# Merge the 'partial' dataframes
+	partial_merged = partial_gtype.merge(partial_ptype, on='sample_name', how='inner')
+	#partial_merged['g_qseqid'] = partial_merged['g_qseqid'].astype(str) + '__' + partial_merged['p_qseqid'].astype(str)
+	partial_merged.insert(1, 'status', ['COMBINED'] * partial_merged.shape[0])
 
-		# Find and keep only the record with max composite score per sample for both type calls
-		idxmax = partial_gtype.groupby('sample_name')['g_composite'].idxmax()
-		partial_gtype = partial_gtype.loc[idxmax].dropna(axis=1)
-		idxmax = partial_ptype.groupby('sample_name')['p_composite'].idxmax()
-		partial_ptype = partial_ptype.loc[idxmax].dropna(axis=1)
+	combined_samples = set(partial_gtype.sample_name).intersection(partial_ptype.sample_name)
+	merged_rows = set(partial_gtype.index[partial_gtype.sample_name.isin(combined_samples)]).union(set(partial_ptype.index[partial_ptype.sample_name.isin(combined_samples)]))
 
-		# Merge the 'partial' dataframes
-		partial_merged = partial_gtype.merge(partial_ptype, on='sample_name', how='outer')
-		partial_merged['g_qseqid'] = partial_merged['g_qseqid'].astype(str) + '__' + partial_merged['p_qseqid'].astype(str)
+	remainder_rows = list(set(df.index) - set(complete.index) - merged_rows)
+	remainder = df.loc[remainder_rows]
+	remainder.insert(1, 'status', ['PARTIAL'] * remainder.shape[0])
 
-		# Keep only the merged records where sample_name was missing earlier
-		partial_merged = partial_merged.loc[partial_merged['sample_name'].isin(missing_samples)]
+	cleaned = pd.concat([complete, partial_merged, remainder]).sort_values(['sample_name','g_qseqid']).reset_index(drop=True)
+	cleaned.insert(2, "synth_score", (cleaned['g_'+score_col].fillna(0) + cleaned['p_'+score_col].fillna(0)).round(2))
 
-		full_calls = pd.concat([full_calls, partial_merged])
+	return cleaned
+
+def zip_columns(df, columns, delim='|', join_char='__'):
+	df[columns] = df[columns].fillna("NA")
+	return df[columns].apply(lambda x : delim.join([a+join_char+b for a, b in itertools.zip_longest(x[columns[0]].split(delim), x[columns[1]].split(delim),fillvalue="NA")]), axis=1)
+
+
+def clean_dataframe(df,  score_col='bitscore'):
+
+	df = handle_partials(df, score_col)
+
+	df[['g_type', 'p_type']] = df[['g_type', 'p_type']] .fillna("NA")
+
+	idxmax = df.groupby(['sample_name','g_type', 'p_type'])['synth_score'].idxmax()
+	df = df.loc[idxmax]
+
+	# Sort by the appropriate metric
+	df = df.sort_values(['sample_name','synth_score'],ascending=[True, False])
+	df.insert(3, "contigs", zip_columns(df, ['g_qseqid','p_qseqid']))
 	
-	# Renaming and cleaning up
-	full_calls = full_calls.rename({'g_qseqid':'qseqid'},axis=1).drop('p_qseqid',axis=1)
-	full_calls['synth_score'] = full_calls['g_composite'] + full_calls['p_composite']
-	full_calls['synth_score'] = full_calls['synth_score'].round(2)
+	condensed = df.groupby('sample_name').agg(lambda x: '|'.join(map(str, x))).reset_index().reset_index(drop=True).copy()
+	df.insert(3, "synth_type", df['g_type'] + '__' + df['p_type'])
 
-	full_calls = sort_collapse_df(full_calls, ['g_type','p_type'], 'synth_score')
+	condensed.insert(3, "synth_type", zip_columns(df, ['g_type','p_type']))
 
-	full_calls['synth_type'] = full_calls[['g_type','p_type']].apply(lambda x : "|".join([a+'_'+b for a, b in itertools.zip_longest(x['g_type'].split("|"), x['p_type'].split("|"),fillvalue="NA")]), axis=1)
-	full_calls = full_calls.drop(['g_type','p_type'], axis=1)
+				  
+	
+	#df = df.drop(['g_type','p_type'], axis=1)
+	#condensed = condensed.drop(['g_type','p_type'], axis=1)
 
-	return full_calls
+	single = condensed.apply(lambda x : x if x.dtype != 'object' else x.str.split("\|").str[0])
+
+	return df, condensed
 
 
 #%%
@@ -181,7 +201,10 @@ def build_blast_df(gblast_path, pblast_path, global_blast_path):
 	ptype_df = parse_blast(pblast_path,'p')
 
 	# merge the individual typing calls into one 
-	synth_df = merge_blast([gtype_df, ptype_df])	
+	merged = merge_blast([gtype_df, ptype_df])	
+	complete, condensed = clean_dataframe(merged, score_col='bitscore')
+
+
 
 	if global_blast_path:
 		global_df = parse_blast(global_blast_path,'global')
@@ -195,17 +218,19 @@ def build_blast_df(gblast_path, pblast_path, global_blast_path):
 		full_blast = synth_df
 
 
-	contig_cols = {}
-	for col in full_blast.columns:
-		if "contig" in col:
-			search = re.search("^[^_]+_(.+)", col)
-			simple_name = search.group(1) if search else None
-			if simple_name and simple_name not in contig_cols:
-				contig_cols[simple_name] = col
-	contig_cols = {y:x for x, y in contig_cols.items()}
+	# contig_cols = {}
+	# for col in full_blast.columns:
+	# 	if "contig" in col:
+	# 		search = re.search("^[^_]+_(.+)", col)
+	# 		simple_name = search.group(1) if search else None
+	# 		if simple_name and simple_name not in contig_cols:
+	# 			contig_cols[simple_name] = col
+	# contig_cols = {y:x for x, y in contig_cols.items()}
 
-	full_blast = full_blast.rename(contig_cols, axis=1)
-	full_blast = full_blast.drop(full_blast.columns[full_blast.columns.str.contains("_contig_")], axis=1)
+	# full_blast = full_blast.rename(contig_cols, axis=1)
+	# full_blast = full_blast.drop(full_blast.columns[full_blast.columns.str.contains("_contig_")], axis=1)
+
+
 	full_blast = full_blast.fillna('NA')
 
 	full_blast = full_blast.drop(full_blast.columns[full_blast.columns.str.endswith(('ref', 'qseqid'))], axis=1)
