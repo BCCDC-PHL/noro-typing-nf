@@ -61,7 +61,7 @@ process run_blastn {
     script:
     workflow_type = "${blast_db}" =~ /gtype/ ? "gtype" : "ptype" 
     """
-    blastn -query ${contig_file} -db ${blast_db} -outfmt "6 qseqid sseqid pident qlen slen bitscore score" > ${sample_id}_blastn.tsv
+    blastn -query ${contig_file} -db ${blast_db} -outfmt "6 qseqid saccver qlen qstart qend slen sstart send length pident qcovhsp mismatch gaps evalue bitscore staxids sscinames" > ${sample_id}_blastn.tsv
     """
 }
 
