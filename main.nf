@@ -31,8 +31,6 @@ log.info """Norovirus Metagenomics Pipeline
 ===================================
 projectDir        : ${projectDir}
 launchDir         : ${launchDir}
-primers           : ${params.primers}
-blast_db          : ${params.blastdb_gtype_fasta}
 fastqInputDir     : ${params.fastq_input}
 outdir            : ${params.outdir}
 run_name          : ${params.run_name}
@@ -41,73 +39,6 @@ git version       : $workflow.revision [$workflow.commitId]
 user              : $workflow.userName
 """.stripIndent()
 
-// database          : ${params.db}
-// Git repository    : $workflow.repository
-// git commit id     : $workflow.commitId
-// branch            : $workflow.revision
-// pipeline run      : ${params.pipeline_short_name}
-// pipeline version  : ${params.pipeline_minor_version}
-
-blast_db_dir = file("${projectDir}/cache/blast_db").mkdirs()
-composite_dir = file("${projectDir}/cache/composite").mkdirs()
-println blast_db_dir ? "BLAST DB directory created successfully" : "Cannot create directory: $blast_db_dir"
-println composite_dir ? "Composite directory created successfully" : "Cannot create directory: $composite_dir"
-
-// println "${params.blastdb_gtype_fasta}"
-// println "${params.blastdb_gtype_fasta}" =~ /blast/ ? "SUCCESS" : "NOT FOUND" 
-
-workflow genotyping {
-
-	take:
-		ch_contigs
-		ch_blastdb_fasta
-	main:
-		// GENOTYPE BLAST SEARCH
-		def workflow_type = 'gtype'
-		make_blast_database(ch_blastdb_fasta).first().set{ch_blastdb} // first() converts the channel from a consumable queue channel into an infinite single-value channel
-		run_blastn(ch_contigs, ch_blastdb)
-
-		// Needed for blast score ratio
-		run_self_blast(ch_blastdb)
-		filter_alignments(run_blastn.out.combine(run_self_blast.out))
-
-		if (params.assemble){
-			ch_gtype_refs = filter_alignments.out.join(assembly.out)
-		} else {
-			ch_gtype_refs = filter_alignments.out.combine(ch_blastdb_fasta)
-		}
-
-		get_best_references(ch_gtype_refs)
-	emit:
-		blast = filter_alignments.out
-		refs = get_best_references.out
-}
-
-workflow ptyping {
-	take:
-		ch_contigs
-		ch_blastdb_fasta
-	main:
-		// GENOTYPE BLAST SEARCH
-		params.workflow = 'ptype'
-		make_blast_database(ch_blastdb_fasta).first().set{ch_blastdb} // first() converts the channel from a consumable queue channel into an infinite single-value channel
-		run_blastn(ch_contigs, ch_blastdb)
-
-		// Needed for blast score ratio
-		run_self_blast(ch_blastdb)
-		filter_alignments(run_blastn.out.combine(run_self_blast.out))
-
-		if (params.assemble){
-			ch_gtype_refs = filter_alignments.out.join(assembly.out)
-		} else {
-			ch_gtype_refs = filter_alignments.out.combine(ch_blastdb_fasta)
-		}
-
-		get_best_references(ch_gtype_refs)
-	emit:
-		blast = filter_alignments.out
-		refs = get_best_references.out
-}
 
 workflow {
 	ch_start_time = Channel.of(LocalDateTime.now())
@@ -118,11 +49,7 @@ workflow {
 
 	ch_adapters = Channel.fromPath(params.adapters_path)
 	//ch_ref_names = Channel.fromList(params.virus_ref_names).collect()
-	ch_composite_paths = Channel.fromList([params.human_ref, params.virus_ref]).collect()
-	ch_human_ref = Channel.from(params.human_ref)
 	ch_centrifuge_db = Channel.from(params.centrifuge_db)
-	ch_blastdb_gtype_fasta = Channel.from(params.blastdb_gtype_fasta)
-	ch_blastdb_ptype_fasta = Channel.from(params.blastdb_ptype_fasta)
 	ch_fastq_input = Channel.fromFilePairs( params.fastq_search_path, flat: true ).map{ it -> [it[0].split('_')[0], it[1], it[2]] }.unique{ it -> it[0] }
 
 	main:
@@ -152,9 +79,9 @@ workflow {
 		plot_coverage(get_coverage.out.coverage_file)
 
 		// // KRAKEN FILTERING
-		// run_kraken(fastp.out.trimmed_reads)
+		run_kraken(fastp.out.trimmed_reads)
 		run_centrifuge(fastp.out.trimmed_reads)
-		run_blastx(run_shovill.out)
+		// run_blastx(run_shovill.out)
 		// kraken_filter(fastp.out.trimmed_reads.join(run_kraken.out))
 		
 
