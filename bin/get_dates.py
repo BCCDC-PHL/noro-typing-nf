@@ -117,7 +117,7 @@ def main():
 
 	# create a dictionary of full_header : accession number
 	ref_headers = header_list.loc[(~targets)&(~background)]
-	ref_headers = {x : x.split(args.header_delim)[args.accno_pos] for x in ref_headers}
+	ref_headers = {x : x.split(args.header_delim)[args.accno_pos].split(".")[0] for x in ref_headers}
 
 	# extract target sequences
 	target_headers = header_list.loc[targets].tolist()
