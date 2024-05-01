@@ -156,13 +156,15 @@ process make_typing_report {
     
     publishDir "${params.outdir}", pattern: "*tsv", mode: "copy"
 
+    errorStrategy 'ignore'
+
     input:
     path(sample_list)
     path(custom_qc_all)
     //path(quast_report)
     path(gblast_collected)
     path(pblast_collected)
-    path(global_blast_collected)
+    val(global_blast_collected)
 
 
     output:
