@@ -25,43 +25,30 @@ process make_blast_database {
     """
 }
 
-process run_self_blast {
-    storeDir "${projectDir}/cache/blast_db/${workflow_type}"
-    
-    input:
-    tuple path(blast_db), path("*")
-
-    output:
-    path("${outfile}")
-
-    script:
-    outfile = "${blast_db.simpleName}_ref_scores.tsv"
-    workflow_type = "${blast_db}" =~ /gtype/ ? "gtype" : "ptype" 
-    """
-    blastn -db ${blast_db} -query ${blast_db} -outfmt "6 qseqid sseqid score" > self_blast.tsv
-    awk '{ if (\$1 == \$2) print \$1"\t"\$3}' self_blast.tsv > out.tmp
-    sed 1i"name\trefscore" out.tmp > ${outfile}
-    rm out.tmp
-    """
-}
-
-process run_blastn {
+process blastn_local {
 
     tag {sample_id}
 
-    publishDir "${params.outdir}/blastn/${workflow_type}/raw", pattern: "${sample_id}*.tsv" , mode:'copy'
+    label 'heavy_ram'
+
+    publishDir "${params.outdir}/blastn/", pattern: "${sample_id}*.tsv" , mode:'copy'
 
     input:
     tuple val(sample_id), path(contig_file)
-    tuple path(blast_db), path("*")
 
     output:
     tuple val(sample_id), path("${sample_id}*.tsv")
 
     script:
-    workflow_type = "${blast_db}" =~ /gtype/ ? "gtype" : "ptype" 
     """
-    blastn -query ${contig_file} -db ${blast_db} -outfmt "6 qseqid saccver qlen qstart qend slen sstart send length pident qcovhsp mismatch gaps evalue bitscore staxids sscinames" > ${sample_id}_blastn.tsv
+
+    export BLASTDB="${params.blast_db_path}"
+
+    blastn \
+    -num_threads ${task.cpus} \
+    -query ${contig_file} \
+    -db ${params.blast_db_name} \
+    -outfmt "6 ${params.blast_outfmt}" > ${sample_id}_blastn.tsv
     """
 }
 

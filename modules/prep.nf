@@ -100,7 +100,7 @@ process run_kraken {
 
     tag {sample_id}
 
-    label 'heavy'
+    label 'heavy_ram'
 
     conda "${projectDir}/environments/kraken.yaml"
 
