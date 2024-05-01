@@ -11,16 +11,11 @@ nextflow.enable.dsl = 2
 // include { pipeline_provenance } from './modules/provenance.nf'
 // include { collect_provenance } from './modules/provenance.nf'
 include { fastQC; fastq_check; run_quast} from './modules/qc.nf'
-include { merge_databases; cutadapt; fastp; fastp_json_to_csv; run_kraken; kraken_filter; run_centrifuge } from './modules/prep.nf' 
+include { cutadapt; fastp; fastp_json_to_csv; run_kraken; kraken_filter; run_centrifuge } from './modules/prep.nf' 
 include { build_composite_reference; index_composite_reference ; get_reference_headers; dehost_fastq } from './modules/prep.nf'
-include { make_blast_database; run_self_blast; run_blastn; run_blastx; filter_alignments; get_best_references; } from './modules/blast.nf'
-//include { p_make_blast_database; p_run_self_blast; p_run_blastn; p_filter_alignments; p_get_best_references; p_run_blastx } from './modules/p_blast.nf'
+include { make_blast_database; blastn_local; run_blastx; filter_alignments; ; } from './modules/blast.nf'
 include { run_spades; run_shovill; run_concoct; run_metabat } from './modules/assembly.nf'
 include { create_bwa_index; create_fasta_index; map_reads; sort_filter_index_sam; index_bam } from './modules/mapping.nf'
-include { run_freebayes; run_mpileup ; get_common_snps } from './modules/variant_calling.nf'
-include { mask_low_coverage; make_consensus } from './modules/consensus.nf'
-include { get_coverage; plot_coverage } from './modules/coverage.nf'
-include { make_multifasta; make_msa; make_tree } from './modules/phylo.nf'
 include { multiqc } from './modules/multiqc.nf'
 
 println "HELLO. STARTING NOROVIRUS METAGENOMICS PIPELINE."
@@ -48,8 +43,8 @@ workflow {
 	//ch_pipeline_provenance = pipeline_provenance(ch_pipeline_name.combine(ch_pipeline_version).combine(ch_start_time))
 
 	ch_adapters = Channel.fromPath(params.adapters_path)
-	//ch_ref_names = Channel.fromList(params.virus_ref_names).collect()
 	ch_centrifuge_db = Channel.from(params.centrifuge_db)
+	ch_blast_db = Channel.from(params.blast_nt_database).first()
 	ch_fastq_input = Channel.fromFilePairs( params.fastq_search_path, flat: true ).map{ it -> [it[0].split('_')[0], it[1], it[2]] }.unique{ it -> it[0] }
 
 	main:
@@ -69,51 +64,22 @@ workflow {
 		fastq_check.out.formatted.collectFile(name: "${params.outdir}/fastq_qual/fastq_stats.tsv", keepHeader: true, skip: 1)
 		
 		run_shovill(fastp.out.trimmed_reads)
+
 		create_bwa_index(run_shovill.out)
 		map_reads(fastp.out.trimmed_reads.join(create_bwa_index.out))
 		sort_filter_index_sam(map_reads.out)
+
+		// METAGENOMIC ASSEMBLY BINNING
 		run_concoct(run_shovill.out.join(sort_filter_index_sam.out))
 		run_metabat(run_shovill.out.join(sort_filter_index_sam.out))
 
-		get_coverage(sort_filter_index_sam.out)
-		plot_coverage(get_coverage.out.coverage_file)
-
-		// // KRAKEN FILTERING
+		// KRAKEN FILTERING
 		run_kraken(fastp.out.trimmed_reads)
-		run_centrifuge(fastp.out.trimmed_reads)
+		// run_centrifuge(fastp.out.trimmed_reads)
+		blastn_local(run_shovill.out)
 		// run_blastx(run_shovill.out)
 		// kraken_filter(fastp.out.trimmed_reads.join(run_kraken.out))
 		
-
-		// genotyping( assembly.out, ch_blastdb_gtype_fasta)
-		// ptyping(assembly.out, ch_blastdb_ptype_fasta)
-
-		// create_bwa_index(genotyping.out.refs)
-
-		
-
-		// // READ MAPPING, SORTING, FILTERING
-		// map_reads(fastp.out.trimmed_reads.join(create_bwa_index.out))
-		// sort_filter_sam(map_reads.out)
-		// index_bam(sort_filter_sam.out)
-
-		// // VARIANT CALLING
-		// create_fasta_index(genotyping.out.refs)
-		// run_freebayes(sort_filter_sam.out.join(create_fasta_index.out))
-		// run_mpileup(sort_filter_sam.out.join(create_fasta_index.out))
-		// get_common_snps(run_freebayes.out.join(run_mpileup.out))
-		
-		// // CONSENSUS GENERATION 
-		// mask_low_coverage(sort_filter_sam.out)
-		// make_consensus(get_common_snps.out.join(genotyping.out.refs).join(mask_low_coverage.out))
-
-		// make_multifasta(make_consensus.out.collect())
-		// make_msa(make_multifasta.out)
-		// make_tree(make_msa.out)
-
-
-		// QualiMap(FluViewer.out.alignment)
-		// parseQMresults(QualiMap.out.genome_results)
 
 		// Collect al the relevant filesfor MULTIQC
 		// ch_fastqc_collected = fastQC.out.zip.map{ it -> [it[1], it[2]]}.collect()
