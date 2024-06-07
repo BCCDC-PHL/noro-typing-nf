@@ -78,11 +78,14 @@ workflow COMPOSITE_ANALYSIS {
 		run_custom_qc(ch_bamfile.join(ch_best_reference).join(make_consensus.out.consensus))
 		ch_qc_all = run_custom_qc.out.csv.collectFile(name: "${params.outpath}/qc/composite_qc_all.csv", keepHeader: true, skip: 1)
 
+		// ch_provenance = FluViewer.out.provenance
+		// ch_provenance = ch_provenance.join(hash_files.out.provenance).map{ it -> [it[0], [it[1]] << it[2]] }
+		// ch_provenance = ch_provenance.join(fastp.out.provenance).map{ it -> [it[0], it[1] << it[2]] }
+		// ch_provenance = ch_provenance.join(cutadapt.out.provenance).map{ it -> [it[0], it[1] << it[2]] }
+		// ch_provenance = ch_provenance.join(ch_fastq_input.map{ it -> it[0] }.combine(ch_pipeline_provenance)).map{ it -> [it[0], it[1] << it[2]] }
+		// collect_provenance(ch_provenance)
+
 	emit:
-		// main = run_blastn.out.main
-		// filter = run_blastn.out.filter
-		// gene_db = extract_genes_database.out.db
-		// db_pos = prep_database.out.combine(extract_genes_database.out.pos)
 		qc_all = ch_qc_all
 		gblast_collect = gblast_collect
 		pblast_collect = pblast_collect
