@@ -1,9 +1,9 @@
-process fastQC {
+process fastqc {
 
     tag { sample_id }
 
-    publishDir path: "${params.outdir}/qc/fastQC/data", pattern: "${sample_id}_R{1,2}*fastqc.zip", mode: "copy"
-    publishDir path: "${params.outdir}/qc/fastQC/", pattern: "${sample_id}_R{1,2}*fastqc.html", mode: "copy"
+    //publishDir path: "${params.outpath}/qc/fastqc_data", pattern: "${sample_id}_R{1,2}*fastqc.zip", mode: "copy"
+    publishDir path: "${params.outpath}/qc/fastqc_html", pattern: "${sample_id}_R{1,2}*fastqc.html", mode: "copy"
 
     input:
     tuple val(sample_id), path(forward), path(reverse)
@@ -27,8 +27,9 @@ process fastq_check {
 
     conda "${projectDir}/environments/fastx.yaml"
 
-    //publishDir path: "${params.outdir}/fastq_qual/", pattern: "${sample_id}.fqqual.tsv", mode: "copy"
-    publishDir path: "${params.outdir}/qc/fastx/", pattern: "${sample_id}.R{1,2}.raw.tsv", mode: "copy"
+    //publishDir path: "${params.outpath}/fastq_qual/", pattern: "${sample_id}.fqqual.tsv", mode: "copy"
+    //publishDir path: "${params.outpath}/${sample_id}/qc/", pattern: "${sample_id}.R{1,2}.raw.tsv", mode: "copy"
+    publishDir path: "${params.outpath}/${sample_id}/", pattern: "${sample_id}*fastq.tsv", mode: "copy"
 
     input: 
     tuple val(sample_id), path(forward), path(reverse)
@@ -36,10 +37,10 @@ process fastq_check {
 
     output:
     path("${sample_id}.R{1,2}.raw.tsv"), emit: raw
-    path("${sample_id}.QC_fastq.tsv"), emit: formatted
+    path("${sample_id}_qc_fastq.tsv"), emit: formatted
 
     """
-    qc_fastq.sh $forward $reverse
+    qc_fastq.sh $forward $reverse ${sample_id}_qc_fastq.tsv
     """
 }
 
@@ -48,19 +49,19 @@ process mapping_check {
 
     tag { sample_id }
     
-    //publishDir path: "${params.outdir}/mapping_qual/", pattern: "${bam.simpleName}.mapqual.tsv",mode: "copy"
-    publishDir path: "${params.outdir}/qc/mapping/", pattern: "${bam.simpleName}.raw.tsv", mode: "copy"
+    //publishDir path: "${params.outpath}/mapping_qual/", pattern: "${bam.simpleName}.mapqual.tsv",mode: "copy"
+    publishDir path: "${params.outpath}/${sample_id}/${task.ext.workflow}/qc", pattern: "${bam.simpleName}*mapping.tsv", mode: "copy"
 
     input: 
 	tuple val(sample_id), path(bam)
 	
 	output:
     path("${bam.simpleName}.raw.tsv"), emit: raw
-    path("${bam.simpleName}.QC_mapping.tsv"), emit: formatted
+    path("${bam.simpleName}_qc_mapping.tsv"), emit: formatted
 
 
     """
-    qc_mapping.sh $bam 
+    qc_mapping.sh $bam ${bam.simpleName}_qc_mapping.tsv
     """
 }
 
@@ -72,71 +73,53 @@ process run_qualimap {
 
     conda 'qualimap'
     
-    publishDir path: "${params.outdir}/qc/mapping/pdf", pattern: "${sample_id}*pdf", mode: "copy"
-    publishDir path: "${params.outdir}/qc/mapping/", pattern: "${sample_id}_qmap", mode: "copy"
+    publishDir path: "${params.outpath}/${sample_id}/${task.ext.workflow}/", pattern: "${sample_id}*pdf", mode: "copy"
+    //publishDir path: "${params.outpath}/${sample_id}/qc/mapping/", pattern: "${sample_id}_qmap", mode: "copy"
 
     input:
     tuple val(sample_id), path(bam_file), path(bam_index)
 
     output:
-    path("${sample_id}_qmap"), emit: main
-    path("${sample_id}.pdf"), emit: pdf
+    //path("${sample_id}_qmap"), emit: main
+    path("${sample_id}*pdf"), emit: pdf
 
     script:
     """
-    qualimap bamqc -bam ${bam_file} -outdir ${sample_id}_qmap &&
-    qualimap bamqc -bam ${bam_file} -outfile ${sample_id}.pdf && 
-    mv ${sample_id}*_stats/${sample_id}.pdf .
+    # qualimap bamqc -bam ${bam_file} -outdir ${sample_id}_qmap
+    qualimap bamqc -bam ${bam_file} -outfile ${sample_id}_qmap.pdf 
+    mv ${sample_id}*_stats/${sample_id}*pdf ./${sample_id}_${task.ext.workflow}_qmap.pdf
     """    
 }
 
 
 process run_quast {
 
-    publishDir path: "${params.outdir}/qc/assembly/plots", pattern: "quast_results/basic_stats/*pdf", mode: "copy"
-    publishDir path: "${params.outdir}/qc/assembly/reports", pattern: "quast_results/*{pdf,html,tsv,log}", mode: "copy"
+    publishDir path: "${params.outpath}/qc", pattern: "quast_plots/*pdf", mode: "copy"
+    publishDir path: "${params.outpath}/qc", pattern: "*{pdf,tsv}", mode: "copy"
 
 
     input:
     path(contig_files)
 
     output:
-    path("quast_results/basic_stats/*pdf"), emit: plots
-    path("quast_results/report.tsv"), emit: tsv
-    path("quast_results/report.pdf"), emit: pdf
+    path("quast_plots/*pdf"), emit: plots
+    path("quast_report.tsv"), emit: tsv
+    path("quast_report.pdf"), emit: pdf
 
     script:
     """
     quast -o quast_results ${contig_files}
+    mv quast_results/report.tsv quast_report.tsv
+    mv quast_results/report.pdf quast_report.pdf
+    mv quast_results/basic_stats/ ./quast_plots
     """    
-}
-
-process run_mapping_qc {
-    tag { sample_id }
-
-    publishDir "${params.outdir}/qc/full/plots", pattern: "${sample_id}.depth.png", mode: 'copy'
-    publishDir "${params.outdir}/qc/full/raw", pattern: "${sample_id}*csv", mode: 'copy'
-
-    input:
-    tuple sample_id, path(bam), path(bam_index), path(consensus), path(ref)
-
-    output:
-    path "${sample_id}.qc.csv", emit: csv
-    path "${sample_id}.depth.png", emit: plot
-
-    script:
-
-    """
-    qc.py ${qcSetting} --outfile ${sample_id}.qc.csv --sample ${sample_id} --ref ${ref} --bam ${bam} --consensus ${consensus}
-    """
 }
 
 process run_custom_qc {
     errorStrategy 'ignore'
     tag { sample_id }
 
-    publishDir "${params.outdir}/qc/custom/csv", pattern: "${sample_id}*csv", mode: 'copy'
-    publishDir "${params.outdir}/qc/custom/plots", pattern: "${sample_id}*png", mode: 'copy'
+    //publishDir "${params.outpath}/${sample_id}/${task.ext.workflow}/qc/", pattern: "${sample_id}*{csv,png}", mode: 'copy'
 
     input:
     tuple val(sample_id), path(bam), path(bam_index), path(ref), path(consensus)
@@ -146,7 +129,6 @@ process run_custom_qc {
     path "${sample_id}*.png", emit: plot
 
     script:
-
     """
     qc.py --outfile ${sample_id}.qc.csv --sample ${sample_id} --ref ${ref} --bam ${bam} --consensus ${consensus}
     """
@@ -154,7 +136,9 @@ process run_custom_qc {
 
 process make_typing_report { 
     
-    publishDir "${params.outdir}", pattern: "*tsv", mode: "copy"
+    publishDir "${params.outpath}/", pattern: "*tsv", mode: "copy"
+
+    errorStrategy 'ignore'
 
     input:
     path(sample_list)
@@ -166,19 +150,20 @@ process make_typing_report {
 
 
     output:
-    path("typing_report_top3.tsv") 
+    path("typing_report.tsv")       , emit: main
+    path("typing_report_top3.tsv")  , emit: top3
 
 
     script:
-    fullblast = params.reference_db_full ? "--globalblast ${global_blast_collected}" : ''
+    global_blast = params.global_database ? "--globalblast ${global_blast_collected}" : ''
     """
-    master_report.py \
+    typing_report.py \
     --sample-list ${sample_list} \
     --gblast ${gblast_collected} \
     --pblast ${pblast_collected} \
-    $fullblast \
+    $global_blast \
     --qc ${custom_qc_all} \
-    --output typing_report_top3.tsv \
+    --outpath typing_report.tsv \
 
     """
 
