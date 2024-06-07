@@ -1,7 +1,7 @@
 FORWARD=$1
 REVERSE=$2
 SAMPLE=$(echo $FORWARD | cut -d_ -f1)
-OUTFILE="${SAMPLE}.QC_fastq.tsv"
+OUTFILE=$3
 
 if [[ ${FORWARD} == *.gz ]]; then
 	gunzip -c ${FORWARD} | fastx_quality_stats -o ${SAMPLE}.R1.raw.tsv -Q 33 &&

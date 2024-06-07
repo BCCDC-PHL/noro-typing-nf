@@ -1,6 +1,8 @@
-rdrp:
-  - 3848
-  - 5371
+# This file describes what genes will be used in dual-typing and their start/end positions in the G1 reference FASTA
+# Order of genes determines the order that results will be displayed; default is VP1_RDRP producing genotype_ptype
 vp1:
-  - 5358
-  - 6950
+  start: 5358
+  end: 6950
+rdrp:
+  start: 3848
+  end: 5371

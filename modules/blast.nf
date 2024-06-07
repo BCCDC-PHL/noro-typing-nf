@@ -1,14 +1,15 @@
 #!/usr/bin/env nextflow
 
 // possibly useful template  https://www.nextflow.io/docs/latest/process.html
-// using storeDir will only run the process if the output files DO NOT exist under the specified path
+// using storeDir will ONLY run the process if the output files do not exist under the specified path
 // if they exist, process is skipped and output is passed as the existing files
 nextflow.enable.dsl=2
 
 import java.nio.file.Paths
 
 process prep_database {
-    storeDir "${projectDir}/cache/blast_db/full/${custom_dir}"
+
+    storeDir "${params.pipeline_cache}/${custom_dir}"
     
     input:
     path(database)
@@ -17,10 +18,11 @@ process prep_database {
     path("*filter.fasta")
 
     script:
-    workflow = task.ext.workflow ?: 'full'
-    custom_dir = task.ext.custom_dir ?: 'global'
+
+    custom_dir = [task.ext.workflow, task.ext.subworkflow].join("/")
+
     """
-    filter_fasta.py main \
+    filter_fasta.py \
     --header_delim ${params.header_delim} \
     --header_pos_accno ${params.header_pos_accno} \
     --header_pos_type ${params.header_pos_type} \
@@ -29,9 +31,9 @@ process prep_database {
     """
 }
 
-process extract_genes_blast {
+process extract_genes_database {
 
-    storeDir "${projectDir}/cache/blast_db/gene/${custom_dir}"
+    storeDir "${params.pipeline_cache}/${custom_dir}"
 
     label 'ultra'
     
@@ -49,48 +51,46 @@ process extract_genes_blast {
     path("*rdrp_pos.yaml"), emit: pos_rdrp, optional: true
 
     script:
-    custom_dir = task.ext.custom_dir ?: 'global'
     gene = task.ext.gene ?: 'all'
-    blastname = "${blast_db_fasta.simpleName}"
-    outname = task.ext.gene ? "${blastname}_gene_${gene}" : "${blastname}_gene_{gene}"
+    custom_dir = [task.ext.workflow, task.ext.subworkflow].join("/")
+    output_name = task.ext.gene != 'all' ? "${blast_db_fasta.simpleName}_gene_${gene}" : "${blast_db_fasta.simpleName}_gene_{gene}"
 
     """
-    extract_genes.py database \
+    extract_genes.py \
     --nthreads ${task.cpus} \
     --query ${blast_db_fasta} \
     --ref ${params.g1_reference} \
     --positions ${params.g1_gene_positions} \
     --gene ${gene} \
-    --outfasta ${outname}.fasta \
-    --outyaml ${outname}_pos.yaml
+    --outfasta ${output_name}.fasta \
+    --outyaml ${output_name}_pos.yaml
     """
 }
 
 process make_blast_database {
-    storeDir "${projectDir}/cache/blast_db/gene/${custom_dir}"
+    storeDir "${params.pipeline_cache}/${custom_dir}"
     
     input:
     path(fasta)
 
     output:
-    path("${db_name}*")
+    path("${blast_db_name}*")
 
     script:
-    workflow = task.ext.workflow ?: ''
-    custom_dir = task.ext.custom_dir ?: 'global'
-    db_name = task.ext.workflow ? "${workflow}_blastdb.fasta" : "global_database.fasta"
-
+    custom_dir = [task.ext.workflow, task.ext.subworkflow].join("/")
+    blast_db_name = "${task.ext.workflow}_${task.ext.subworkflow}_blastdb.fasta"
+    
     """
     printf -- "- process_name: blast\\n" > blast_provenance.yml
     printf -- "  tool_name: blastn\\n  tool_version: \$(blastn -version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> blast_provenance.yml
 
-    makeblastdb -dbtype nucl -in ${fasta} -out ${db_name}
-    cp ${fasta} ${db_name}
+    makeblastdb -dbtype nucl -in ${fasta} -out ${blast_db_name}
+    cp ${fasta} ${blast_db_name}
     """
 }
 
 process run_self_blast {
-    storeDir "${projectDir}/cache/blast_db/gene/${custom_dir}"
+    storeDir "${params.pipeline_cache}/${custom_dir}"
     
     input:
     path(blast_db)
@@ -99,14 +99,13 @@ process run_self_blast {
     path("${outfile}")
 
     script:
-    db_name = blast_db[0]
-    custom_dir = task.ext.custom_dir ?: 'full_genome'
-    outfile = "${db_name.simpleName}_ref_scores.tsv"
-    workflow = task.ext.workflow ?: ''
+    blast_db_name = blast_db[0]
+    custom_dir = [task.ext.workflow, task.ext.subworkflow].join("/")
+    outfile = "${blast_db_name.simpleName}_self_blast_scores.tsv"
     """
-    blastn -db ${db_name} -query ${db_name} -outfmt "6 qseqid sseqid score" > self_blast.tsv
+    blastn -db ${blast_db_name} -query ${blast_db_name} -outfmt "6 qseqid sseqid score" > self_blast.tsv
     awk '{ if (\$1 == \$2) print \$1"\t"\$3}' self_blast.tsv > ${outfile}
-    sed -i 1i"name\trefscore" ${outfile}
+    sed -i 1i"name\tselfscore" ${outfile}
     """
 }
 
@@ -118,9 +117,9 @@ process run_blastn {
 
     tag {sample_id}
 
-    publishDir "${params.outdir}/blastn/${workflow}/raw", pattern: "${sample_id}*blastn.tsv" , mode:'copy'
-    publishDir "${params.outdir}/blastn/${workflow}/filtered", pattern: "${sample_id}*filter.tsv" , mode:'copy'
-    publishDir "${params.outdir}/blastn/${workflow}/final_refs", pattern: "${sample_id}*fasta" , mode:'copy'
+    publishDir "${custom_outdir}", pattern: "${output_name}*blastn.tsv" , mode:'copy'
+    publishDir "${custom_outdir}", pattern: "${output_name}*filter.tsv" , mode:'copy'
+    publishDir "${custom_outdir}", pattern: "${output_name}*fasta" , mode:'copy'
 
     input: 
     tuple val(sample_id), path(contig_file), path(sequence_source)          // 1) Name  2) Assembled contigs  3) FASTA file where the final output sequences are stored
@@ -128,43 +127,48 @@ process run_blastn {
     path(self_blast_scores)
 
     output:
-    tuple val(sample_id), path("${sample_id}*blastn.tsv"), emit: raw
-    tuple val(sample_id), path("${sample_id}*filter.tsv"), path("${sample_id}*fasta"), emit: main
-    //tuple val(sample_id), path("${sample_id}*full.tsv"), emit: full
-    tuple val(sample_id), path("${sample_id}*_ref.fasta"), emit: ref
+    tuple val(sample_id), path("${output_name}*blastn.tsv"), emit: raw
+    tuple val(sample_id), path("${output_name}*filter.tsv"), path("${sample_id}*fasta"), emit: main
+    tuple val(sample_id), path("${output_name}*_ref.fasta"), emit: ref
     path("${sample_id}*filter.tsv"), emit: filter
 
     script:
+    workflow = task.ext.workflow
     contig_mode = params.assemble ? "--contig_mode" : "" 
-    workflow = task.ext.workflow ?: 'global'
     blast_db_name = blast_db[0]
-    self_blast = self_blast_scores.name != 'NO_FILE' ? "--ref_scores ${self_blast_scores}" : ''
-    blast_metric = workflow == 'global' ? params.blast_refsearch_metric : params.blast_typing_metric
+    self_blast = self_blast_scores.name != 'NO_FILE' ? "--self_blast_scores ${self_blast_scores}" : ''
+    blast_metric = workflow == 'global' ? params.blast_metrics_global : params.blast_metrics_composite
+    output_name = "${sample_id}_${workflow}_${task.ext.subworkflow}"
+    custom_outdir = "${params.outpath}/${sample_id}/${workflow}/"
     
     """
-    blastn -num_threads ${task.cpus} -query ${contig_file} -db ${blast_db_name} -outfmt "6 ${params.blast_outfmt}" > ${sample_id}_${workflow}_blastn.tsv &&
-    filter_alignments.py ${sample_id}_${workflow}_blastn.tsv \
+    export BLAST_OUTFMT="${params.blast_outfmt}"
+
+    blastn -num_threads ${task.cpus} -query ${contig_file} -db ${blast_db_name} -outfmt "6 ${params.blast_outfmt}" > ${output_name}_blastn.tsv &&
+
+    filter_alignments.py ${output_name}_blastn.tsv \
     --metric ${blast_metric} \
     ${contig_mode} \
     ${self_blast} \
     --seqs ${sequence_source} \
     --min_id ${params.min_blast_id} \
-    --tsv_out ${sample_id}_${workflow}_blastn_filter.tsv \
-    --fasta_out ${sample_id}_${workflow}_ref.fasta 
+    --tsv_out ${output_name}_blastn_filter.tsv \
+    --fasta_out ${output_name}_ref.fasta 
 
+    # need to reformat the global headers here to prep for downstream
     if [ ${workflow} == 'global' ] ; then
-        delim=${params.header_delim}
-        pos_type=${params.header_pos_type}
-        pos_accno=${params.header_pos_accno}
+        DELIM=${params.header_delim}
+        POS_TYPE=${params.header_pos_type}
+        POS_ACCNO=${params.header_pos_accno}
 
-        header=`head -n1 ${sample_id}_${workflow}_ref.fasta | cut -c2-`
-        fields=(\${header//\$delim/ })
+        header=`head -n1 ${output_name}_ref.fasta | cut -c2-`
+        fields=(\${header//\$DELIM/ })
 
-        newheader=">${sample_id}|\${fields[\$pos_type]}|\${fields[\$pos_accno]}|sample|global"
-        echo \$newheader
+        NEWHEADER=">${sample_id}|\${fields[\$POS_TYPE]}|\${fields[\$POS_ACCNO]}|global"
+        echo \$NEWHEADER
 
-        sed -i 1d ${sample_id}_${workflow}_ref.fasta 
-        sed -i 1i"\$newheader" ${sample_id}_${workflow}_ref.fasta 
+        sed -i 1d ${output_name}_ref.fasta 
+        sed -i 1i"\$NEWHEADER" ${output_name}_ref.fasta 
     fi
     """
 }
@@ -175,62 +179,65 @@ process combine_references {
 
     errorStrategy 'ignore'
 
-    publishDir "${params.outdir}/blastn/final/", pattern: "${sample_id}*fasta" , mode:'copy'
+    publishDir "${params.outpath}/${sample_id}/${task.ext.workflow}/", pattern: "${sample_id}*fasta" , mode:'copy'
 
     input:
-    tuple val(sample_id), path(gtype_blast), path(gtype_ref), path(ptype_blast), path(ptype_ref)
+    tuple val(sample_id), path(gtype_blast), path(gtype_reference), path(ptype_blast), path(ptype_reference)
 
     output:
-    tuple val(sample_id), path("${sample_id}.ref.final.fasta")
+    tuple val(sample_id), path("${output_name}_ref.fasta")
     // path("${sample_id}*final.tsv"), emit: blast
 
     script: 
+    output_name = "${sample_id}_${task.ext.workflow}"
     """
-    delim=${params.header_delim}
-    pos_type=${params.header_pos_type}
-    pos_accno=${params.header_pos_accno}
+    DELIM=${params.header_delim}
+    POS_TYPE=${params.header_pos_type}
+    POS_ACCNO=${params.header_pos_accno}
 
-    gheader=`head -n1 ${gtype_ref} | cut -c2-`
-    pheader=`head -n1 ${ptype_ref} | cut -c2-`
+    GHEADER=`head -n1 ${gtype_reference} | cut -c2-`
+    PHEADER=`head -n1 ${ptype_reference} | cut -c2-`
 
-    if [ -z \$gheader ] && [ -z \$pheader ]; then 
+    if [ -z \$GHEADER ] && [ -z \$PHEADER ]; then 
         echo "ERROR: Neither gtype or ptype reference is a valid FASTA"
         exit 1  
     fi
 
     function concat_header {
-        filename=\$1
-        append=\$2
-        newfile=\$3
+        FILENAME=\$1
+        APPEND=\$2
+        OUTFILE=\$3
 
-        old_header=`head -n1 \$filename`
-        full_header="\$old_header \$append"
+        old_header=`head -n1 \$FILENAME`
+        full_header="\$old_header \$APPEND"
 
-        echo \$full_header > \$newfile
-        sed 1d \$filename >> \$newfile
+        echo \$full_header > \$OUTFILE
+        sed 1d \$FILENAME >> \$OUTFILE
     }
 
-    gfields=(\${gheader//\$delim/ })
-    pfields=(\${pheader//\$delim/ })
+    GFIELDS=(\${GHEADER//\$DELIM/ })
+    PFIELDS=(\${PHEADER//\$DELIM/ })
 
-    newheader="${sample_id}|\${gfields[\$pos_type]}_\${pfields[\$pos_type]}|\${gfields[\$pos_accno]}_\${pfields[\$pos_accno]}|sample|composite"
-    echo \$newheader
+    NEWHEADER="${sample_id}|\${GFIELDS[\$POS_TYPE]}-\${PFIELDS[\$POS_TYPE]}|\${GFIELDS[\$POS_ACCNO]}-\${PFIELDS[\$POS_ACCNO]}|composite"
+    echo \$NEWHEADER
 
-    if [ ! -z \$gheader ]; then 
-        concat_header ${gtype_ref} \${newheader} gtype_rename.fasta
+    if [ ! -z \$GHEADER ]; then 
+        concat_header ${gtype_reference} \${NEWHEADER} gtype_rename.fasta
     fi
-    if [ ! -z \$pheader ]; then 
-        concat_header ${ptype_ref} \${newheader} ptype_rename.fasta
+    if [ ! -z \$PHEADER ]; then 
+        concat_header ${ptype_reference} \${NEWHEADER} ptype_rename.fasta
     fi
 
-    if [ -z \$gheader ] && [ ! -z \$pheader ]; then
-        cp ptype_rename.fasta ${sample_id}.ref.final.fasta
-    elif [ -z \$pheader ] && [ ! -z \$gheader ]; then
-        cp gtype_rename.fasta ${sample_id}.ref.final.fasta
-    elif [ \${gfields[\$pos_accno]} == \${pfields[\$pos_accno]} ] ; then 
-        cp gtype_rename.fasta ${sample_id}.ref.final.fasta
+    OUTFILE="${output_name}_ref.fasta"
+
+    if [ -z \$GHEADER ] && [ ! -z \$PHEADER ]; then
+        cp ptype_rename.fasta \$OUTFILE
+    elif [ -z \$PHEADER ] && [ ! -z \$GHEADER ]; then
+        cp gtype_rename.fasta \$OUTFILE
+    elif [ \${GFIELDS[\$POS_ACCNO]} == \${PFIELDS[\$POS_ACCNO]} ] ; then 
+        cp gtype_rename.fasta \$OUTFILE
     else
-        cat gtype_rename.fasta ptype_rename.fasta > ${sample_id}.ref.final.fasta
+        cat gtype_rename.fasta ptype_rename.fasta > \$OUTFILE
     fi 
     """
 }
@@ -239,7 +246,7 @@ process run_blastx {
 
     tag {sample_id}
 
-    publishDir "${params.outdir}/blastx/${workflow_type}", pattern: "${sample_id}*.tsv" , mode:'copy'
+    publishDir "${params.outpath}/blastx/${workflow_type}", pattern: "${sample_id}*.tsv" , mode:'copy'
 
     input:
     tuple val(sample_id), path(contig_file)

@@ -2,7 +2,7 @@ process multiqc {
 
     conda 'multiqc'
 
-    publishDir "${params.outdir}/multi_qc", pattern: "*report.html", mode:'copy'
+    publishDir "${params.outpath}/", pattern: "*report.html", mode:'copy'
 
     input:
     path('*')
