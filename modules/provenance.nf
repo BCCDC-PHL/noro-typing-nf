@@ -5,7 +5,7 @@ process collect_provenance {
 
   executor 'local'
 
-  publishDir params.versioned_outdir ? "${params.outdir}/${params.run_name}/${params.pipeline_short_name}-v${params.pipeline_minor_version}-output/Provenance_files" : "${params.outdir}/${params.run_name}/${params.pipeline_short_name}-v${params.pipeline_minor_version}-output/Provenance_files", pattern: "${sample_id}_*_provenance.yml", mode: 'copy'
+  publishDir "${params.outpath}/provenance_files" , pattern: "${sample_id}_*_provenance.yml", mode: 'copy'
 
   input:
   tuple val(sample_id), path(provenance_files)
@@ -24,7 +24,7 @@ process full_provenance {
 
 	executor 'local'
 
-	publishDir "${params.outdir}/${params.run_name}-provenance.yml", pattern: "provenance.yml", mode: 'copy'
+	publishDir "${params.outpath}/${params.run_name}-provenance.yml", pattern: "provenance.yml", mode: 'copy'
 
 	input:
 	path(provenance_files)
