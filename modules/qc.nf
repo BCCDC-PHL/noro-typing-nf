@@ -17,53 +17,11 @@ process fastqc {
     """
     printf -- "- process_name: fastqc\\n" > ${sample_id}_fastqc_provenance.yml
     printf -- "  tool_name: fastqc\\n  tool_version: \$(fastqc --version 2>&1 | sed -n '1 p')\\n" >> ${sample_id}_fastqc_provenance.yml
+
     fastqc --threads ${task.cpus} ${sample_id}_R1.trim.fastq.gz ${sample_id}_R2.trim.fastq.gz 
     """
 }
 
-process fastq_check {
-
-    tag { sample_id }
-
-    conda "${projectDir}/environments/fastx.yaml"
-
-    //publishDir path: "${params.outpath}/fastq_qual/", pattern: "${sample_id}.fqqual.tsv", mode: "copy"
-    //publishDir path: "${params.outpath}/${sample_id}/qc/", pattern: "${sample_id}.R{1,2}.raw.tsv", mode: "copy"
-    publishDir path: "${params.outpath}/${sample_id}/", pattern: "${sample_id}*fastq.tsv", mode: "copy"
-
-    input: 
-    tuple val(sample_id), path(forward), path(reverse)
-
-
-    output:
-    path("${sample_id}.R{1,2}.raw.tsv"), emit: raw
-    path("${sample_id}_qc_fastq.tsv"), emit: formatted
-
-    """
-    qc_fastq.sh $forward $reverse ${sample_id}_qc_fastq.tsv
-    """
-}
-
-
-process mapping_check {
-
-    tag { sample_id }
-    
-    //publishDir path: "${params.outpath}/mapping_qual/", pattern: "${bam.simpleName}.mapqual.tsv",mode: "copy"
-    publishDir path: "${params.outpath}/${sample_id}/${task.ext.workflow}/qc", pattern: "${bam.simpleName}*mapping.tsv", mode: "copy"
-
-    input: 
-	tuple val(sample_id), path(bam)
-	
-	output:
-    path("${bam.simpleName}.raw.tsv"), emit: raw
-    path("${bam.simpleName}_qc_mapping.tsv"), emit: formatted
-
-
-    """
-    qc_mapping.sh $bam ${bam.simpleName}_qc_mapping.tsv
-    """
-}
 
 process run_qualimap {
     
@@ -82,9 +40,14 @@ process run_qualimap {
     output:
     //path("${sample_id}_qmap"), emit: main
     path("${sample_id}*pdf"), emit: pdf
+    tuple val(sample_id), path("${sample_id}*provenance.yml"),  emit: provenance
+
 
     script:
     """
+    printf -- "- process_name: run_qualimap\\n" > ${sample_id}_qualimap_provenance.yml
+    printf -- "  tool_name: qualimap\\n  tool_version: \$(bwa 2>&1 |  sed -n '3p' | cut -d' ' -f2)\\n" >> ${sample_id}_qualimap_provenance.yml
+
     # qualimap bamqc -bam ${bam_file} -outdir ${sample_id}_qmap
     qualimap bamqc -bam ${bam_file} -outfile ${sample_id}_qmap.pdf 
     mv ${sample_id}*_stats/${sample_id}*pdf ./${sample_id}_${task.ext.workflow}_qmap.pdf
@@ -119,7 +82,7 @@ process run_custom_qc {
     errorStrategy 'ignore'
     tag { sample_id }
 
-    //publishDir "${params.outpath}/${sample_id}/${task.ext.workflow}/qc/", pattern: "${sample_id}*{csv,png}", mode: 'copy'
+    publishDir "${params.outpath}/${sample_id}/${task.ext.workflow}", pattern: "${sample_id}*.csv", mode: 'copy'
 
     input:
     tuple val(sample_id), path(bam), path(bam_index), path(ref), path(consensus)
@@ -155,7 +118,7 @@ process make_typing_report {
 
 
     script:
-    global_blast = params.global_database ? "--globalblast ${global_blast_collected}" : ''
+    global_blast = params.blastn_global_database ? "--globalblast ${global_blast_collected}" : ''
     """
     typing_report.py \
     --sample-list ${sample_list} \
