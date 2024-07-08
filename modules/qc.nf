@@ -40,17 +40,18 @@ process qualimap {
     output:
     //path("${sample_id}_qmap"), emit: main
     path("${sample_id}*pdf"), emit: pdf
-    tuple val(sample_id), path("${sample_id}*provenance.yml"),  emit: provenance
+    tuple val(sample_id), path("${output_name}*provenance.yml"),  emit: provenance
 
 
     script:
+    output_name = "${sample_id}_${task.ext.workflow}"
     """
-    printf -- "- process_name: run_qualimap\\n" > ${sample_id}_qualimap_provenance.yml
-    printf -- "  tool_name: qualimap\\n  tool_version: \$(bwa 2>&1 |  sed -n '3p' | cut -d' ' -f2)\\n" >> ${sample_id}_qualimap_provenance.yml
+    printf -- "- process_name: qualimap\\n" > ${output_name}_qualimap_provenance.yml
+    printf -- "  tool_name: qualimap\\n  tool_version: \$(bwa 2>&1 |  sed -n '3p' | cut -d' ' -f2)\\n" >> ${output_name}_qualimap_provenance.yml
 
     # qualimap bamqc -bam ${bam_file} -outdir ${sample_id}_qmap
     qualimap bamqc -bam ${bam_file} -outfile ${sample_id}_qmap.pdf 
-    mv ${sample_id}*_stats/${sample_id}*pdf ./${sample_id}_${task.ext.workflow}_qmap.pdf
+    mv ${sample_id}*_stats/${sample_id}*pdf ./${output_name}_qmap.pdf
     """    
 }
 

@@ -10,11 +10,11 @@ process get_coverage {
 
 	output:
 	tuple val(sample_id), path("*bed"), emit: main
-	tuple val(sample_id), path("${sample_id}_samtools_provenance.yml"), emit: provenance
+	//tuple val(sample_id), path("${sample_id}_samtools_provenance.yml"), emit: provenance
 	tuple val(sample_id), env(COVERAGE), emit: metric
 
 	"""
-	printf -- "- process_name: samtools\\n" > ${sample_id}_samtools_provenance.yml
+	printf -- "- process_name: get_coverage\\n" > ${sample_id}_samtools_provenance.yml
 	printf -- "  tool_name: samtools\\n tool_version: \$(samtools | sed -n '1 p'))\\n" >> ${sample_id}_samtools_provenance.yml
 
 	samtools depth -a ${bamfile} > ${sample_id}_coverage.bed
