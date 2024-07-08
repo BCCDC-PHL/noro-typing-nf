@@ -103,7 +103,7 @@ process cutadapt {
     """
 }
 
-process run_kraken {
+process kraken2 {
 
     tag {sample_id}
 
@@ -119,7 +119,7 @@ process run_kraken {
 
     output:
     tuple val(sample_id), path("${sample_id}*report"), path("${sample_id}*out"), emit: main
-    tuple val(sample_id), path("${sample_id}_R1.kfilter.fastq.gz"), path("${sample_id}_R2.kfilter.fastq.gz"), emit: fastq
+    tuple val(sample_id), path("${sample_id}*provenance.yml"),  emit: provenance
     path("${sample_id}_kraken.report"), emit: report
 
     """
@@ -127,22 +127,37 @@ process run_kraken {
     printf -- "  tool_name: kraken2\\n  tool_version: \$(kraken2 --version | head -n1 | cut -d' ' -f3)\\n" >> ${sample_id}_kraken2_provenance.yml
 
     kraken2 --confidence 0.1 \
-    --threads ${task.cpus} --db ${params.kraken_db} \
+    --threads ${task.cpus} --db ${params.kraken2_database} \
     --paired ${reads_1} ${reads_2} \
-    --report ${sample_id}_kraken.report > ${sample_id}_kraken.out &&
-
-    # Extract the norovirus specific reads 
-    extract_kraken_reads.py  --fastq-output \
-    -k ${sample_id}_kraken.out -r ${sample_id}_kraken.report \
-    -1 ${reads_1} -2 ${reads_2} \
-    -o ${sample_id}_R1.kfilter.fastq -o2 ${sample_id}_R2.kfilter.fastq \
-    -t ${params.krk_norovirus_id} 0 --include-children &&
-    gzip -c ${sample_id}_R1.kfilter.fastq > ${sample_id}_R1.kfilter.fastq.gz &&
-    gzip -c ${sample_id}_R2.kfilter.fastq > ${sample_id}_R2.kfilter.fastq.gz
+    --report ${sample_id}_kraken.report > ${sample_id}_kraken.out
     """
 }
 
-process run_centrifuge {
+process filter_reads_kraken2 {
+    tag {sample_id}
+
+    conda "${projectDir}/environments/kraken.yaml"
+
+    input: 
+    tuple val(sample_id), path(reads_1), path(reads_2), path(kraken2_report), path(kraken2_out)
+
+    output:
+    tuple val(sample_id), path("${sample_id}_R1.kfilter.fastq.gz"), path("${sample_id}_R2.kfilter.fastq.gz"), emit: fastq
+
+    script:
+    """
+    # Extract the norovirus specific reads 
+    extract_kraken_reads.py  --fastq-output \
+    -k ${kraken2_out} -r ${kraken2_report} \
+    -1 ${reads_1} -2 ${reads_2} \
+    -o ${sample_id}_R1.kfilter.fastq -o2 ${sample_id}_R2.kfilter.fastq \
+    -t ${params.k2_norovirus_id} 0 --include-children &&
+    gzip ${sample_id}_R1.kfilter.fastq &&
+    gzip ${sample_id}_R2.kfilter.fastq 
+    """
+}
+
+process centrifuge {
     tag {sample_id}
 
     label 'heavy'
@@ -209,11 +224,19 @@ process dehost_fastq {
     tuple val(sample_id), path("${sample_id}_R1.dehost.fastq.gz"), path("${sample_id}_R2.dehost.fastq.gz"), emit: fastq
     tuple val(sample_id), path("${sample_id}.dehosted.bam"), emit: bam
     tuple val(sample_id), path("${sample_id}_dehost_metrics.txt"), emit: metrics
+    tuple val(sample_id), path("${sample_id}*provenance.yml"),  emit: provenance
+
 
     script: 
     // params.composite_ref_name
     // dehost.py -k ${virus_names.join(' ')}
     """
+    printf -- "- process_name: dehost_fastq\\n" > ${sample_id}_dehost_provenance.yml
+    printf -- "  tool_name: bwa\\n  tool_version: \$(bwa 2>&1 |  sed -n '3p' | cut -d' ' -f2)\\n" >> ${sample_id}_dehost_provenance.yml
+    printf -- "  tool_name: samtools\\n  tool_version: \$(samtools version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> ${sample_id}_dehost_provenance.yml
+
+    bwa 2>&1 |  sed -n '3p' | cut -d' ' -f2
+
     bwa mem -t ${task.cpus} -T 30 ${index_name} ${reads_1} ${reads_2} | \
     dehost.py -r ${virus_reference_list} -n ${sample_id} -o ${sample_id}.dehosted.bam 2> ${sample_id}_dehost_metrics.txt
     samtools sort -n --threads ${task.cpus} ${sample_id}.dehosted.bam | \
