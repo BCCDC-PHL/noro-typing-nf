@@ -3,7 +3,7 @@ process get_coverage {
 
 	tag { sample_id }
 
-	publishDir "${params.outpath}/${sample_id}/${task.ext.workflow}", pattern: " ${sample_id}*bed", mode:'copy'
+	publishDir "${params.outdir}/${sample_id}/${task.ext.workflow}", pattern: " ${sample_id}*bed", mode:'copy'
 
 	input:
 	tuple val(sample_id), path(bamfile), path(bam_index)
@@ -29,7 +29,7 @@ process plot_coverage {
 
 	conda "${projectDir}/environments/plot.yaml"
 
-	publishDir "${params.outpath}/${sample_id}/${task.ext.workflow}", mode:'copy'
+	publishDir "${params.outdir}/${sample_id}/${task.ext.workflow}", mode:'copy'
 
 	input:
 	tuple val(sample_id), path(coverage_bed)
@@ -47,7 +47,7 @@ process make_pileup {
 
 	tag { sample_id }
 
-	publishDir "${params.outpath}/${sample_id}/${task.ext.workflow}/pileups/", pattern: "*{ambiguous.tsv,pileup.tsv}", mode:'copy'
+	publishDir "${params.outdir}/${sample_id}/${task.ext.workflow}/pileups/", pattern: "*{ambiguous.tsv,pileup.tsv}", mode:'copy'
 
 	input:
 	tuple val(sample_id), path(reference), path(bam), path(bam_index)

@@ -2,7 +2,7 @@ process run_mpileup {
 
 	tag {sample_id}
 
-	publishDir "${params.outpath}/${sample_id}/${task.ext.workflow}/vcf", pattern: "${output_name}.mp.vcf.gz" , mode:'copy'
+	publishDir "${params.outdir}/${sample_id}/${task.ext.workflow}/vcf", pattern: "${output_name}.mp.vcf.gz" , mode:'copy'
 
     input: 
     tuple val(sample_id), path(bamfile), path(bam_index), path(reference)
@@ -23,7 +23,7 @@ process run_freebayes {
 
     tag { sample_id }
 
-    publishDir "${params.outpath}/${sample_id}/${task.ext.workflow}/vcf", pattern: "${output_name}.fb.vcf.gz", mode: 'copy'
+    publishDir "${params.outdir}/${sample_id}/${task.ext.workflow}/vcf", pattern: "${output_name}.fb.vcf.gz", mode: 'copy'
 
     input: 
 	tuple val(sample_id), path(bamfile), path(bam_index), path(reference)
@@ -58,7 +58,7 @@ process get_common_snps {
 
     tag { sample_id }
 
-    publishDir "${params.outpath}/${sample_id}/${task.ext.workflow}/", pattern: "${output_name}.common.vcf.gz", mode: 'copy'
+    publishDir "${params.outdir}/${sample_id}/${task.ext.workflow}/", pattern: "${output_name}.common.vcf.gz", mode: 'copy'
     
     input:
     tuple val(sample_id), path(fb_vcf), path(mp_vcf)

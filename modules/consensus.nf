@@ -1,7 +1,7 @@
 process mask_low_coverage {
 	tag { sample_id }
 
-    publishDir "${params.outpath}/${sample_id}/${task.ext.workflow}", pattern: "${sample_id}*.bed", mode: 'copy'
+    publishDir "${params.outdir}/${sample_id}/${task.ext.workflow}", pattern: "${sample_id}*.bed", mode: 'copy'
     
     input:
     tuple val(sample_id), path(bamfile), path(bam_index)
@@ -25,7 +25,7 @@ process make_consensus {
 
     tag { sample_id }
 
-    publishDir "${params.outpath}/${sample_id}/${task.ext.workflow}", pattern: "${sample_id}*consensus.fasta", mode: 'copy'
+    publishDir "${params.outdir}/${sample_id}/${task.ext.workflow}", pattern: "${sample_id}*consensus.fasta", mode: 'copy'
     
     input:
     tuple val(sample_id), path(common_vcf), path(vcf_index), path(reference), path(mask_file)

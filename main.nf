@@ -31,11 +31,11 @@ log.info """Norovirus Typing Pipeline
 projectDir        : ${projectDir}
 launchDir         : ${launchDir}
 primers           : ${params.primers}
-gblast_db          : ${params.gtype_database}
-pblast_db          : ${params.ptype_database}
-global_blast_db    : ${params.global_database}
+gtype_blast_db          : ${params.blastn_gtype_database}
+ptype_blast_db          : ${params.blastn_ptype_database}
+global_blast_db    : ${params.blastn_global_database}
 fastqInputDir     : ${params.fastq_input}
-outdir            : ${params.final_outdir}
+outdir            : ${params.outdir}
 pipeline_cache    : ${params.pipeline_cache}
 run_name          : ${params.run_name}
 git repo          : $workflow.repository
@@ -59,10 +59,9 @@ workflow {
 
 	//ch_pipeline_provenance = pipeline_provenance(ch_pipeline_name.combine(ch_pipeline_version).combine(ch_start_time))
 
-	ch_human_ref = Channel.from(params.human_ref)
-	ch_centrifuge_db = Channel.from(params.centrifuge_db)
-	ch_blastdb_gtype_fasta = Channel.from(params.gtype_database)
-	ch_blastdb_ptype_fasta = Channel.from(params.ptype_database)
+	ch_human_ref = Channel.from(params.human_reference_fasta)
+	ch_blastn_gtype_database = Channel.from(params.blastn_gtype_database)
+	ch_blastn_ptype_database = Channel.from(params.blastn_ptype_database)
 	ch_fastq_input = Channel.fromFilePairs( params.fastq_search_path, flat: true ).map{ it -> [it[0].split('_')[0], it[1], it[2]] }.unique{ it -> it[0] }
 
 	main:
@@ -72,7 +71,7 @@ workflow {
 			error "ERROR: Global reference search cannot use BSR (blast score ratio)."
 		}
 
-		ch_sample_list = ch_fastq_input.map{it -> it[0]}.collectFile(name: "${params.outpath}/sample-list.txt", newLine: true)
+		ch_sample_list = ch_fastq_input.map{it -> it[0]}.collectFile(name: "${params.outdir}/sample-list.txt", newLine: true)
 		
 		// READ TRIMMING AND FILTERING 
 		fastp(ch_fastq_input)
@@ -87,7 +86,7 @@ workflow {
 		run_kraken(fastp.out.trimmed_reads)
 		
 		// DEHOSTING
-		make_union_database(ch_blastdb_gtype_fasta, ch_blastdb_ptype_fasta).first()
+		make_union_database(ch_blastn_gtype_database, ch_blastn_ptype_database).first()
 		build_composite_reference(ch_human_ref.combine(make_union_database.out.fasta))
 		dehost_fastq(
 			run_kraken.out.fastq,
@@ -103,7 +102,7 @@ workflow {
 		COMPOSITE_ANALYSIS(dehost_fastq.out.fastq, assembly.out)
 
 		// If global database is passed, use full length global reference database to find reference
-		if (params.global_database){
+		if (params.blastn_global_database){
 			// perform a BLAST search on the global reference database 
 			GLOBAL_ANALYSIS(dehost_fastq.out.fastq, assembly.out)
 			ch_global_analysis = GLOBAL_ANALYSIS.out.blast_collect

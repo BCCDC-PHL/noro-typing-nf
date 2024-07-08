@@ -4,7 +4,7 @@ process assembly {
 
 	tag {sample_id}
 
-    publishDir "${params.outpath}/${sample_id}/", pattern: "${sample_id}.contigs.fa", mode:'copy'
+    publishDir "${params.outdir}/${sample_id}/", pattern: "${sample_id}_contigs.fa", mode:'copy'
 	//publishDir "${custom_outdir}", pattern: "${sample_id}.spades.tar.gz"
 
 	input:
