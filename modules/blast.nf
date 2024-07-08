@@ -117,9 +117,9 @@ process run_blastn {
 
     tag {sample_id}
 
-    publishDir "${custom_outdir}", pattern: "${output_name}*blastn.tsv" , mode:'copy'
-    publishDir "${custom_outdir}", pattern: "${output_name}*filter.tsv" , mode:'copy'
-    publishDir "${custom_outdir}", pattern: "${output_name}*fasta" , mode:'copy'
+    publishDir "${params.outdir}/${sample_id}/${workflow}/", pattern: "${output_name}*blastn.tsv" , mode:'copy'
+    publishDir "${params.outdir}/${sample_id}/${workflow}/", pattern: "${output_name}*filter.tsv" , mode:'copy'
+    publishDir "${params.outdir}/${sample_id}/${workflow}/", pattern: "${output_name}*fasta" , mode:'copy'
 
     input: 
     tuple val(sample_id), path(contig_file), path(sequence_source)          // 1) Name  2) Assembled contigs  3) FASTA file where the final output sequences are stored
@@ -179,7 +179,7 @@ process combine_references {
 
     errorStrategy 'ignore'
 
-    publishDir "${params.outpath}/${sample_id}/${task.ext.workflow}/", pattern: "${sample_id}*fasta" , mode:'copy'
+    publishDir "${params.outdir}/${sample_id}/${task.ext.workflow}/", pattern: "${sample_id}*fasta" , mode:'copy'
 
     input:
     tuple val(sample_id), path(gtype_blast), path(gtype_reference), path(ptype_blast), path(ptype_reference)

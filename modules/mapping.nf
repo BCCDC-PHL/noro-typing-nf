@@ -24,7 +24,7 @@ process sort_filter_index_sam {
 
 	tag {sample_id}
 
-    //publishDir "${params.outpath}/mapped_reads/sorted${workflow}", pattern: "${sample_id}.sorted.bam"
+    //publishDir "${params.outdir}/mapped_reads/sorted${workflow}", pattern: "${sample_id}.sorted.bam"
 
     input: 
     tuple val(sample_id), path(samfile)
@@ -46,8 +46,8 @@ process merge_fasta_bam {
 
 	tag {sample_id}
 
-    //publishDir "${params.outpath}/mapped_reads/merged", pattern: "*bam"
-    publishDir "${params.outpath}/${sample_id}/${task.ext.workflow}/", pattern: "*fasta" , mode:'copy'
+    publishDir "${params.outdir}/${sample_id}/${task.ext.workflow}/", pattern: "*bam"
+    publishDir "${params.outdir}/${sample_id}/${task.ext.workflow}/", pattern: "*fasta" , mode:'copy'
 
     input: 
     tuple val(sample_id),  path(references), path(bam_file), path(bam_index)

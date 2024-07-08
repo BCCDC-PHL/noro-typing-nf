@@ -2,8 +2,8 @@ process fastqc {
 
     tag { sample_id }
 
-    //publishDir path: "${params.outpath}/qc/fastqc_data", pattern: "${sample_id}_R{1,2}*fastqc.zip", mode: "copy"
-    publishDir path: "${params.outpath}/qc/fastqc_html", pattern: "${sample_id}_R{1,2}*fastqc.html", mode: "copy"
+    //publishDir path: "${params.outdir}/qc/fastqc_data", pattern: "${sample_id}_R{1,2}*fastqc.zip", mode: "copy"
+    publishDir path: "${params.outdir}/qc/fastqc_html", pattern: "${sample_id}_R{1,2}*fastqc.html", mode: "copy"
 
     input:
     tuple val(sample_id), path(forward), path(reverse)
@@ -23,7 +23,7 @@ process fastqc {
 }
 
 
-process run_qualimap {
+process qualimap {
     
     tag { sample_id }
 
@@ -31,8 +31,8 @@ process run_qualimap {
 
     conda 'qualimap'
     
-    publishDir path: "${params.outpath}/${sample_id}/${task.ext.workflow}/", pattern: "${sample_id}*pdf", mode: "copy"
-    //publishDir path: "${params.outpath}/${sample_id}/qc/mapping/", pattern: "${sample_id}_qmap", mode: "copy"
+    publishDir path: "${params.outdir}/${sample_id}/${task.ext.workflow}/", pattern: "${sample_id}*pdf", mode: "copy"
+    //publishDir path: "${params.outdir}/${sample_id}/qc/mapping/", pattern: "${sample_id}_qmap", mode: "copy"
 
     input:
     tuple val(sample_id), path(bam_file), path(bam_index)
@@ -55,10 +55,10 @@ process run_qualimap {
 }
 
 
-process run_quast {
+process quast {
 
-    publishDir path: "${params.outpath}/qc", pattern: "quast_plots/*pdf", mode: "copy"
-    publishDir path: "${params.outpath}/qc", pattern: "*{pdf,tsv}", mode: "copy"
+    publishDir path: "${params.outdir}/qc", pattern: "quast_plots/*pdf", mode: "copy"
+    publishDir path: "${params.outdir}/qc", pattern: "*{pdf,tsv}", mode: "copy"
 
 
     input:
@@ -78,11 +78,11 @@ process run_quast {
     """    
 }
 
-process run_custom_qc {
+process custom_qc {
     errorStrategy 'ignore'
     tag { sample_id }
 
-    publishDir "${params.outpath}/${sample_id}/${task.ext.workflow}", pattern: "${sample_id}*.csv", mode: 'copy'
+    publishDir "${params.outdir}/${sample_id}/${task.ext.workflow}", pattern: "${sample_id}*.csv", mode: 'copy'
 
     input:
     tuple val(sample_id), path(bam), path(bam_index), path(ref), path(consensus)
@@ -99,7 +99,7 @@ process run_custom_qc {
 
 process make_typing_report { 
     
-    publishDir "${params.outpath}/", pattern: "*tsv", mode: "copy"
+    publishDir "${params.outdir}/", pattern: "*tsv", mode: "copy"
 
     errorStrategy 'ignore'
 

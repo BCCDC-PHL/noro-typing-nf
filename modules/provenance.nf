@@ -5,7 +5,7 @@ process collect_provenance {
 
   executor 'local'
 
-  publishDir "${params.outpath}/provenance_files" , pattern: "${sample_id}_*_provenance.yml", mode: 'copy'
+  publishDir "${params.outdir}/${sample_id}" , pattern: "${sample_id}_*_provenance.yml", mode: 'copy'
 
   input:
   tuple val(sample_id), path(provenance_files)

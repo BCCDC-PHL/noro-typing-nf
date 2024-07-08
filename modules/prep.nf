@@ -42,9 +42,7 @@ process fastp {
 
     tag { sample_id }
 
-    //publishDir "${params.outpath}/preprocess/fastp", pattern: "${sample_id}*_R{1,2}.trim.fastq.gz" 
-    //publishDir "${params.outpath}/preprocess/fastp/html", pattern: "${sample_id}*html" , mode:'copy'
-    publishDir "${params.outpath}/${sample_id}/", pattern: "${sample_id}*csv", mode: "copy"
+    publishDir "${params.outdir}/${sample_id}/", pattern: "${sample_id}*{csv,html}", mode: "copy"
 
     input:
     tuple val(sample_id), path(fastq1), path(fastq2)
@@ -78,8 +76,8 @@ process cutadapt {
 
     tag { sample_id }
 
-    // publishDir "${params.outpath}/preprocess/cutadapt", pattern: "${sample_id}_R{1,2}.trimmed.fastq.gz"
-    publishDir "${params.outpath}/${sample_id}", pattern: "*cutadapt.log", mode:'copy'
+    // publishDir "${params.outdir}/preprocess/cutadapt", pattern: "${sample_id}_R{1,2}.trimmed.fastq.gz"
+    publishDir "${params.outdir}/${sample_id}", pattern: "*cutadapt.log", mode:'copy'
 
     input:
     tuple val(sample_id), path(reads_1), path(reads_2)
@@ -113,9 +111,8 @@ process run_kraken {
 
     conda "${projectDir}/environments/kraken.yaml"
 
-    publishDir path: "${params.outpath}/${sample_id}", pattern: "${sample_id}*report", mode: "copy"
-    publishDir path: "${params.outpath}/${sample_id}", pattern: "${sample_id}*out", mode: "copy"
-    //publishDir path: "${params.outpath}/preprocess/kraken/filtered", pattern: "${sample_id}*kfilter.fastq.gz"
+    publishDir path: "${params.outdir}/${sample_id}", pattern: "${sample_id}*report", mode: "copy"
+    publishDir path: "${params.outdir}/${sample_id}", pattern: "${sample_id}*out", mode: "copy"
 
     input: 
     tuple val(sample_id), path(reads_1), path(reads_2)
@@ -152,8 +149,8 @@ process run_centrifuge {
 
     conda "${projectDir}/environments/kraken.yaml"
 
-    publishDir path: "${params.outpath}/centrifuge/reports", pattern: "${sample_id}_kraken.report", mode: "copy"
-    publishDir path: "${params.outpath}/centrifuge/output", pattern: "${sample_id}_kraken.out", mode: "copy"
+    publishDir path: "${params.outdir}/centrifuge/reports", pattern: "${sample_id}_kraken.report", mode: "copy"
+    publishDir path: "${params.outdir}/centrifuge/output", pattern: "${sample_id}_kraken.out", mode: "copy"
 
 
     input: 
@@ -199,9 +196,9 @@ process dehost_fastq {
 
     tag {sample_id}
 
-    // publishDir path: "${params.outpath}/preprocess/dehosted/", pattern: "${sample_id}*fastq.gz"
-    // publishDir path: "${params.outpath}/preprocess/dehosted/bam", pattern: "${sample_id}*bam"
-    publishDir path: "${params.outpath}/${sample_id}/", pattern: "${sample_id}*_metrics.txt", mode: "copy"
+    // publishDir path: "${params.outdir}/preprocess/dehosted/", pattern: "${sample_id}*fastq.gz"
+    // publishDir path: "${params.outdir}/preprocess/dehosted/bam", pattern: "${sample_id}*bam"
+    publishDir path: "${params.outdir}/${sample_id}/", pattern: "${sample_id}*_metrics.txt", mode: "copy"
 
     input:
     tuple val(sample_id), path(reads_1), path(reads_2)
