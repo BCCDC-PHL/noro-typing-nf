@@ -145,7 +145,7 @@ workflow {
 		ch_provenance = ch_provenance.mix(dehost_fastq.out.provenance)
 		ch_provenance = ch_provenance.mix(assembly.out.provenance)
 		ch_provenance = ch_provenance.mix(COMPOSITE_ANALYSIS.out.provenance)
-		ch_provenance = ch_provenance.mix(GLOBAL_ANALYSIS.out.provenance).unique().groupTuple()
-		ch_provenance.view()
+		ch_provenance = ch_provenance.mix(GLOBAL_ANALYSIS.out.provenance).unique{it[1].name}.groupTuple()
+
 		collect_provenance(ch_provenance)
 }

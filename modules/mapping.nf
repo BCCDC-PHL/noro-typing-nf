@@ -11,13 +11,13 @@ process map_reads {
 
     output:
     tuple val(sample_id), path("${output_name}.sam"), emit: sam
-    tuple val(sample_id), path("${output_name}_bwa_provenance.yml"), emit:provenance
+    tuple val(sample_id), path("${sample_id}-*-provenance.yml"), emit:provenance
 
     script:
     output_name = "${sample_id}_${task.ext.workflow}"
 	"""
-    printf -- "- process_name: map_reads\\n" > ${output_name}_bwa_provenance.yml
-    printf -- "  tool_name: bwa\\n  tool_version: \$(bwa 2>&1 | head -n3 | tail -n1 | cut -d' ' -f2)\\n" >> ${output_name}_bwa_provenance.yml
+    printf -- "- process_name: map_reads\\n" > ${sample_id}-bwa-provenance.yml
+    printf -- "  tools: \\n  - tool_name: bwa\\n    tool_version: \$(bwa 2>&1 | head -n3 | tail -n1 | cut -d' ' -f2)\\n" >> ${sample_id}-bwa-provenance.yml
 
     bwa index ${reference}
 	bwa mem -t ${task.cpus} ${reference} ${reads_1} ${reads_2} > ${output_name}.sam
@@ -34,13 +34,13 @@ process sort_filter_sam {
 
     output:
     tuple val(sample_id), path("${output_name}.sort.filter.bam"), path("${sample_id}*bai"), emit: bam
-    tuple val(sample_id), path("${output_name}_samtools_provenance.yml"), emit: provenance
+    tuple val(sample_id), path("${sample_id}-*-provenance.yml"), emit: provenance
 
     script:
     output_name = "${sample_id}_${task.ext.workflow}"
 	"""
-    printf -- "- process_name: sort_filter_sam\\n" > ${output_name}_samtools_provenance.yml
-    printf -- "  tool_name: samtools\\n  tool_version: \$(samtools --version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> ${output_name}_samtools_provenance.yml
+    printf -- "- process_name: sort_filter_sam\\n" > ${sample_id}-samtools-provenance.yml
+    printf -- "  tools: \\n  - tool_name: samtools\\n    tool_version: \$(samtools --version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> ${sample_id}-samtools-provenance.yml
 
 	samtools view -f 3 -F 2828 -q 30 -h ${samfile} | samtools sort -o ${output_name}.sort.filter.bam 
     samtools index ${output_name}.sort.filter.bam 

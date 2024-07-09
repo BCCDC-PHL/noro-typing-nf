@@ -7,13 +7,13 @@ process hash_files {
 
     output:
     tuple  val(sample_id), path("${sample_id}_${file_type}.sha256.csv"), emit: csv
-    tuple  val(sample_id), path("${sample_id}_${file_type}_provenance.yml"), emit: provenance
+    tuple  val(sample_id), path("${sample_id}-*-provenance.yml"), emit: provenance
 
     script:
     """
     shasum -a 256 ${files_to_hash} | tr -s ' ' ',' > ${sample_id}_${file_type}.sha256.csv
     while IFS=',' read -r hash filename; do
-        printf -- "- input_filename: \$filename\\n  input_path: \$(realpath \$filename)\\n  sha256: \$hash\\n" >> ${sample_id}_${file_type}_provenance.yml
+        printf -- "- input_filename: \$filename\\n  input_path: \$(realpath \$filename)\\n  sha256: \$hash\\n" >> ${sample_id}-hash_files-provenance.yml
     done < ${sample_id}_${file_type}.sha256.csv
     """
 }
@@ -51,13 +51,13 @@ process fastp {
     tuple val(sample_id), path("${sample_id}_R1.trim.fastq.gz"), path("${sample_id}_R2.trim.fastq.gz"), emit: trimmed_reads
     tuple val(sample_id), path("${sample_id}.fastp.json"), emit: json
     tuple val(sample_id), path("${sample_id}.fastp.html"), emit: html
-    tuple val(sample_id), path("${sample_id}_fastp_provenance.yml"), emit: provenance
+    tuple val(sample_id), path("${sample_id}-*-provenance.yml"), emit: provenance
     tuple val(sample_id), path("${sample_id}_fastp.csv"), emit: csv
 
     script:
     """
-    printf -- "- process_name: fastp\\n" > ${sample_id}_fastp_provenance.yml
-    printf -- "  tool_name: fastp\\n  tool_version: \$(fastp --version 2>&1 | cut -d ' ' -f 2)\\n" >> ${sample_id}_fastp_provenance.yml
+    printf -- "- process_name: fastp\\n" > ${sample_id}-fastp-provenance.yml
+    printf -- "  tools: \\n  - tool_name: fastp\\n    tool_version: \$(fastp --version 2>&1 | cut -d ' ' -f 2)\\n" >> ${sample_id}-fastp-provenance.yml
     fastp \
       -t ${task.cpus} \
       -i ${fastq1} \
@@ -85,12 +85,12 @@ process cutadapt {
     output:
     tuple val(sample_id), path("${sample_id}_R1.trimmed.fastq.gz"), path("${sample_id}_R2.trimmed.fastq.gz"), emit: trimmed_reads
     path("${sample_id}_cutadapt.log"), emit: log
-    tuple val(sample_id), path("${sample_id}_cutadapt_provenance.yml"), emit: provenance
+    tuple val(sample_id), path("${sample_id}-*-provenance.yml"), emit: provenance
 
     script:
     """
-    printf -- "- process_name: cutadapt\\n" > ${sample_id}_cutadapt_provenance.yml
-    printf -- "  tool_name: cutadapt\\n  tool_version: \$(cutadapt --version 2>&1 | cut -d ' ' -f 2)\\n" >> ${sample_id}_cutadapt_provenance.yml
+    printf -- "- process_name: cutadapt\\n" > ${sample_id}-cutadapt-provenance.yml
+    printf -- "  tools: \\n  - tool_name: cutadapt\\n    tool_version: \$(cutadapt --version 2>&1 | cut -d ' ' -f 2)\\n" >> ${sample_id}-cutadapt-provenance.yml
     cutadapt \
       -j ${task.cpus} \
       -g file:${params.primers} \
@@ -123,8 +123,8 @@ process kraken2 {
     path("${sample_id}_kraken.report"), emit: report
 
     """
-    printf -- "- process_name: kraken2\\n" > ${sample_id}_kraken2_provenance.yml
-    printf -- "  tool_name: kraken2\\n  tool_version: \$(kraken2 --version | head -n1 | cut -d' ' -f3)\\n" >> ${sample_id}_kraken2_provenance.yml
+    printf -- "- process_name: kraken2\\n" > ${sample_id}-kraken2-provenance.yml
+    printf -- "  tools: \\n  - tool_name: kraken2\\n    tool_version: \$(kraken2 --version | head -n1 | cut -d' ' -f3)\\n" >> ${sample_id}-kraken2-provenance.yml
 
     kraken2 --confidence 0.1 \
     --threads ${task.cpus} --db ${params.kraken2_database} \
@@ -231,9 +231,9 @@ process dehost_fastq {
     // params.composite_ref_name
     // dehost.py -k ${virus_names.join(' ')}
     """
-    printf -- "- process_name: dehost_fastq\\n" > ${sample_id}_dehost_provenance.yml
-    printf -- "  tool_name: bwa\\n  tool_version: \$(bwa 2>&1 |  sed -n '3p' | cut -d' ' -f2)\\n" >> ${sample_id}_dehost_provenance.yml
-    printf -- "  tool_name: samtools\\n  tool_version: \$(samtools version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> ${sample_id}_dehost_provenance.yml
+    printf -- "- process_name: dehost_fastq\\n" > ${sample_id}-dehost-provenance.yml
+    printf -- "  tools: \\n  - tool_name: bwa\\n    tool_version: \$(bwa 2>&1 |  sed -n '3p' | cut -d' ' -f2)\\n" >> ${sample_id}-dehost-provenance.yml
+    printf -- "  - tool_name: samtools\\n    tool_version: \$(samtools version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> ${sample_id}-dehost-provenance.yml
 
     bwa 2>&1 |  sed -n '3p' | cut -d' ' -f2
 

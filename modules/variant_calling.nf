@@ -9,14 +9,14 @@ process mpileup {
 
     output:
     tuple val(sample_id), path("${output_name}.mp.vcf.gz"), emit: vcf
-    tuple val(sample_id), path("${output_name}_mpileup_provenance.yml"), emit: provenance
+    tuple val(sample_id), path("${sample_id}-*-provenance.yml"), emit: provenance
 
     script:
     output_name = "${sample_id}_${task.ext.workflow}"
 	"""
-	printf -- "- process_name: mpileup\\n" >> ${output_name}_mpileup_provenance.yml
-    printf -- "  tool_name: samtools\\n  tool_version: \$(samtools --version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> ${output_name}_mpileup_provenance.yml
-    printf -- "  tool_name: bcftools\\n  tool_version: \$(bcftools --version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> ${output_name}_mpileup_provenance.yml
+	printf -- "- process_name: mpileup\\n" >> ${sample_id}-mpileup-provenance.yml
+    printf -- "  tools: \\n  - tool_name: samtools\\n    tool_version: \$(samtools --version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> ${sample_id}-mpileup-provenance.yml
+    printf -- "  - tool_name: bcftools\\n    tool_version: \$(bcftools --version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> ${sample_id}-mpileup-provenance.yml
 
     samtools faidx ${reference}
 	bcftools mpileup \
@@ -42,15 +42,15 @@ process freebayes {
 	
 	output:
     tuple val(sample_id), path("${output_name}.fb.vcf.gz"), emit: vcf
-    tuple val(sample_id), path("${output_name}_freebayes_provenance.yml"), emit: provenance
+    tuple val(sample_id), path("${sample_id}-*-provenance.yml"), emit: provenance
 
     script:
     output_name = "${sample_id}_${task.ext.workflow}"
 
     """
-	printf -- "- process_name: freebayes\\n" >> ${output_name}_freebayes_provenance.yml
-    printf -- "  tool_name: samtools\\n  tool_version: \$(samtools --version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> ${output_name}_freebayes_provenance.yml
-    printf -- "  tool_name: freebayes\\n  tool_version: \$(freebayes --version | cut -d' ' -f3)\\n" >> ${output_name}_freebayes_provenance.yml
+	printf -- "- process_name: freebayes\\n" >> ${sample_id}-freebayes-provenance.yml
+    printf -- "  tools: \\n  - tool_name: samtools\\n    tool_version: \$(samtools --version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> ${sample_id}-freebayes-provenance.yml
+    printf -- "  - tool_name: freebayes\\n    tool_version: \$(freebayes --version | cut -d' ' -f3)\\n" >> ${sample_id}-freebayes-provenance.yml
 
     samtools faidx ${reference}
     freebayes --gvcf -X -O \
@@ -82,14 +82,14 @@ process find_common_snps {
 	
     output:
     tuple val(sample_id), path("${output_name}.common.vcf.gz"), path("${output_name}*common.vcf.gz.csi"), emit: vcf
-    tuple val(sample_id), path("${output_name}_find_common_snps_provenance.yml"), emit: provenance
+    tuple val(sample_id), path("${sample_id}-*-provenance.yml"), emit: provenance
     
     script:
     output_name = "${sample_id}_${task.ext.workflow}"
 
     """
-    printf -- "- process_name: find_common_snps\\n" >> ${output_name}_find_common_snps_provenance.yml
-    printf -- "  tool_name: bcftools\\n  tool_version: \$(bcftools --version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> ${output_name}_find_common_snps_provenance.yml
+    printf -- "- process_name: find_common_snps\\n" >> ${sample_id}-find_common_snps-provenance.yml
+    printf -- "  tools: \\n  - tool_name: bcftools\\n    tool_version: \$(bcftools --version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> ${sample_id}-find_common_snps-provenance.yml
 
     bcftools sort --output-type b ${fb_vcf} > ${fb_vcf}b
     bcftools sort --output-type b ${mp_vcf} > ${mp_vcf}b
