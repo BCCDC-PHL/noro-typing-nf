@@ -128,7 +128,7 @@ process blastn {
     tuple val(sample_id), path("${output_name}*filter.tsv"), path("${sample_id}*fasta"), emit: main
     tuple val(sample_id), path("${output_name}*_ref.fasta"), emit: ref
     path("${sample_id}*filter.tsv"), emit: filter
-    tuple val(sample_id), path("${output_name}_*_provenance.yml"), emit: provenance
+    tuple val(sample_id), path("${sample_id}-*-provenance.yml"), emit: provenance
 
     script:
     workflow = task.ext.workflow
@@ -139,8 +139,8 @@ process blastn {
     output_name = "${sample_id}_${workflow}_${task.ext.subworkflow}"
     
     """
-    printf -- "- process_name: blastn\\n" > ${output_name}_blastn_provenance.yml
-    printf -- "  tool_name: blastn\\n  tool_version: \$(blastn -version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> ${output_name}_blastn_provenance.yml
+    printf -- "- process_name: blastn\\n" > ${sample_id}-blastn-provenance.yml
+    printf -- "  tools: \\n  - tool_name: blastn\\n    tool_version: \$(blastn -version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> ${sample_id}-blastn-provenance.yml
 
 
     export BLAST_OUTFMT="${params.blast_outfmt}"
