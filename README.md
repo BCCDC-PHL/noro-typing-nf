@@ -1,6 +1,5 @@
 # Norovirus Nextflow Pipeline
 
-
 ![Logo](./images/logo.png)
 
 ## Overview 
