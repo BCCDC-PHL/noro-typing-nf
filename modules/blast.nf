@@ -81,9 +81,6 @@ process make_blast_database {
     blast_db_name = "${task.ext.workflow}_${task.ext.subworkflow}_blastdb.fasta"
     
     """
-    printf -- "- process_name: blast\\n" > blast_provenance.yml
-    printf -- "  tool_name: blastn\\n  tool_version: \$(blastn -version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> blast_provenance.yml
-
     makeblastdb -dbtype nucl -in ${fasta} -out ${blast_db_name}
     cp ${fasta} ${blast_db_name}
     """
@@ -109,7 +106,7 @@ process run_self_blast {
     """
 }
 
-process run_blastn {
+process blastn {
 
     errorStrategy 'ignore'
 
@@ -117,9 +114,9 @@ process run_blastn {
 
     tag {sample_id}
 
-    publishDir "${custom_outdir}", pattern: "${output_name}*blastn.tsv" , mode:'copy'
-    publishDir "${custom_outdir}", pattern: "${output_name}*filter.tsv" , mode:'copy'
-    publishDir "${custom_outdir}", pattern: "${output_name}*fasta" , mode:'copy'
+    publishDir "${params.outdir}/${sample_id}/${workflow}/", pattern: "${output_name}*blastn.tsv" , mode:'copy'
+    publishDir "${params.outdir}/${sample_id}/${workflow}/", pattern: "${output_name}*filter.tsv" , mode:'copy'
+    publishDir "${params.outdir}/${sample_id}/${workflow}/", pattern: "${output_name}*fasta" , mode:'copy'
 
     input: 
     tuple val(sample_id), path(contig_file), path(sequence_source)          // 1) Name  2) Assembled contigs  3) FASTA file where the final output sequences are stored
@@ -131,6 +128,7 @@ process run_blastn {
     tuple val(sample_id), path("${output_name}*filter.tsv"), path("${sample_id}*fasta"), emit: main
     tuple val(sample_id), path("${output_name}*_ref.fasta"), emit: ref
     path("${sample_id}*filter.tsv"), emit: filter
+    tuple val(sample_id), path("${sample_id}-*-provenance.yml"), emit: provenance
 
     script:
     workflow = task.ext.workflow
@@ -139,9 +137,12 @@ process run_blastn {
     self_blast = self_blast_scores.name != 'NO_FILE' ? "--self_blast_scores ${self_blast_scores}" : ''
     blast_metric = workflow == 'global' ? params.blast_metrics_global : params.blast_metrics_composite
     output_name = "${sample_id}_${workflow}_${task.ext.subworkflow}"
-    custom_outdir = "${params.outpath}/${sample_id}/${workflow}/"
     
     """
+    printf -- "- process_name: blastn\\n" > ${sample_id}-blastn-provenance.yml
+    printf -- "  tools: \\n  - tool_name: blastn\\n    tool_version: \$(blastn -version 2>&1 | head -n1 | cut -d' ' -f2)\\n" >> ${sample_id}-blastn-provenance.yml
+
+
     export BLAST_OUTFMT="${params.blast_outfmt}"
 
     blastn -num_threads ${task.cpus} -query ${contig_file} -db ${blast_db_name} -outfmt "6 ${params.blast_outfmt}" > ${output_name}_blastn.tsv &&
@@ -179,7 +180,7 @@ process combine_references {
 
     errorStrategy 'ignore'
 
-    publishDir "${params.outpath}/${sample_id}/${task.ext.workflow}/", pattern: "${sample_id}*fasta" , mode:'copy'
+    publishDir "${params.outdir}/${sample_id}/${task.ext.workflow}/", pattern: "${sample_id}*fasta" , mode:'copy'
 
     input:
     tuple val(sample_id), path(gtype_blast), path(gtype_reference), path(ptype_blast), path(ptype_reference)
@@ -239,25 +240,5 @@ process combine_references {
     else
         cat gtype_rename.fasta ptype_rename.fasta > \$OUTFILE
     fi 
-    """
-}
-
-process run_blastx {
-
-    tag {sample_id}
-
-    publishDir "${params.outpath}/blastx/${workflow_type}", pattern: "${sample_id}*.tsv" , mode:'copy'
-
-    input:
-    tuple val(sample_id), path(contig_file)
-    tuple path(diamond_db), path("*")
-
-    output:
-    tuple val(sample_id), path("${sample_id}*.tsv")
-
-    script:
-    workflow_type = "${diamond_db}" =~ /gtype/ ? "gtype" : "ptype" 
-    """
-    diamond blastx --threads ${task.cpus} -d ${diamond_db} -q ${contig_file} -o ${sample_id}_blastx.tsv --outfmt "6 qseqid sseqid pident qlen slen length bitscore score"
     """
 }
