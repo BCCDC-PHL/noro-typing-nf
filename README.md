@@ -1,5 +1,8 @@
 # Norovirus Nextflow Pipeline
 
+
+![Logo](./images/logo.png)
+
 ## Overview 
 
 Norovirus is a highly contagious virus responsible for causing gastroenteritis, an infection of the stomach and intestine. 
